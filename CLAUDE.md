@@ -4,9 +4,10 @@ App monolítica de finanzas para dos usuarios (John y Lina). Lee docs/ antes de 
 
 ## Comandos
 - `npm run dev` — server (tsx watch) + web (vite) en paralelo; BD: `docker compose up db`
+- `docker compose up` — alternativa: todo (db + server + web) como contenedores, con hot-reload vía bind mount
 - `npm test` — vitest (server y web)
 - `npm run lint` / `npm run typecheck`
-- `npx prisma migrate dev` — nueva migración (correr en server/)
+- `npx prisma migrate dev` — nueva migración (correr en server/, o `docker compose exec server npx prisma migrate dev` si usas Docker)
 
 ## Reglas
 - TypeScript estricto en todo. Validar entradas de API con zod.

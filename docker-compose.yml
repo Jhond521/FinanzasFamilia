@@ -10,6 +10,57 @@ services:
       - '5432:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run dev -w server
+    env_file: .env
+    environment:
+      # dentro de la red de Docker el host de la BD es el nombre del servicio, no localhost
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/finanzas_pareja
+      # bind mount Windows -> Linux no propaga eventos inotify; forzar polling para hot-reload
+      CHOKIDAR_USEPOLLING: 'true'
+      CHOKIDAR_INTERVAL: '300'
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/app
+      # node_modules propios del contenedor (Linux) para no chocar con binarios nativos instalados en Windows
+      - node_modules:/app/node_modules
+      - server_node_modules:/app/server/node_modules
+      - web_node_modules:/app/web/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run dev -w web
+    environment:
+      API_PROXY_TARGET: http://server:3000
+      CHOKIDAR_USEPOLLING: 'true'
+      CHOKIDAR_INTERVAL: '300'
+    ports:
+      - '5173:5173'
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - server_node_modules:/app/server/node_modules
+      - web_node_modules:/app/web/node_modules
+    depends_on:
+      - server
 
 volumes:
   db_data:
+  node_modules:
+  server_node_modules:
+  web_node_modules:
