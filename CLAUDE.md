@@ -23,3 +23,7 @@ App monolítica de finanzas para dos usuarios (John y Lina). Lee docs/ antes de 
 
 ## Deploy
 - push a develop → Railway dev; merge a main → producción. Migraciones corren en el CMD del contenedor.
+- El seed NO corre solo en el deploy (el CMD solo hace `migrate deploy`). Tras el primer deploy de un ambiente:
+  `railway ssh --service <servicio> --environment <ambiente> -- node dist/seed.js`.
+- `server/src/index.ts` necesita `app.set('trust proxy', 1)` en production para que la cookie de sesión funcione
+  detrás del proxy de Railway (si no, el login "funciona" pero la sesión nunca queda activa). Detalle en docs/04.

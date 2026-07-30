@@ -39,10 +39,13 @@
 ## Ambientes y flujo Git (GitHub + Railway)
 
 - Repo GitHub con dos ramas: `develop` y `main`.
-- Un proyecto Railway con **dos environments**: `development` (deploy automático desde `develop`) y `production` (desde `main`). Cada environment con su servicio Postgres y su `DATABASE_URL`.
-- Variables por ambiente: `DATABASE_URL`, `SESSION_SECRET`, `NODE_ENV`, `APP_URL`.
+- Un proyecto Railway (`FinanzasFamilia`) con **dos environments**: `dev` (deploy automático desde `develop`, servicio `FinanzasFamilia-dev`) y `production` (desde `main`, servicio `FinanzasFamilia`). Cada environment con su propio servicio Postgres (`Postgres-Y1ww` en dev, `Postgres` en production) y su `DATABASE_URL` (referenciada como variable, ej. `${{Postgres.DATABASE_URL}}`).
+- Variables por ambiente: `DATABASE_URL`, `SESSION_SECRET` (generado al azar, distinto por ambiente), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL`, `ALLOWED_EMAILS`, `APP_URL`. `GOOGLE_CLIENT_ID`/`SECRET` son los mismos en dev y production (una sola app de Google Cloud Console con los dos callback URLs autorizados como redirect URIs).
 - Flujo: feature → PR a `develop` (CI: lint + tests) → probar en dev → PR `develop` → `main` → producción. Migraciones corren solas en el deploy (`migrate deploy` en el CMD).
 - Dominio: el generado por Railway es suficiente (`*.up.railway.app`); dominio propio opcional después.
+- `railway.json` en la raíz fija el builder a `DOCKERFILE` explícitamente. Un servicio creado desde cero vía `railway add --repo ...` no detectó el Dockerfile del repo por su cuenta y uso Railpack por defecto (se salta migraciones y `NODE_ENV=production`) — sin este archivo, cualquier servicio nuevo que se cree en el proyecto corre ese riesgo.
+- **El seed nunca corre solo**: el `CMD` del Dockerfile solo hace `prisma migrate deploy`, no siembra usuarios ni rubros. Tras el primer deploy de un ambiente (o si se recrea la base), hay que correr el seed manualmente una vez: `railway ssh --service <servicio> --environment <ambiente> -- node dist/seed.js`.
+- **Cookie de sesión detrás del proxy de Railway**: Railway termina TLS en su edge y reenvía por HTTP interno al contenedor. `server/src/index.ts` necesita `app.set('trust proxy', 1)` en production — sin esto, Express no reconoce la conexión como segura y la cookie de sesión (`secure: true`, requerido en production) nunca se activa: el login completa del lado del servidor (sesión se guarda) pero el navegador nunca la recibe/envía de vuelta, y el usuario vuelve a la pantalla de login sin ningún error visible.
 
 ## Decisiones y notas
 
