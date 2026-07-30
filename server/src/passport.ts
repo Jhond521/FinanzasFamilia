@@ -32,17 +32,14 @@ export function configurePassport(): void {
         },
         (_accessToken, _refreshToken, profile, done) => {
           void (async () => {
-  const email = profile.emails?.[0]?.value?.toLowerCase();
-            console.log('[auth debug] verify callback', { email, allowedEmails });
+            const email = profile.emails?.[0]?.value?.toLowerCase();
             if (!email || !isEmailAllowed(email, allowedEmails)) {
-              console.log('[auth debug] email not allowed', { email });
               done(null, false);
               return;
             }
 
             // El usuario ya debe existir (creado por el seed): no hay registro publico.
             const user = await prisma.user.findUnique({ where: { email } });
-            console.log('[auth debug] user lookup', { email, found: Boolean(user) });
             if (!user) {
               done(null, false);
               return;
@@ -63,16 +60,12 @@ export function configurePassport(): void {
     void prisma.user
       .findUnique({ where: { id } })
       .then((user) => {
-        console.log('[auth debug] deserializeUser', { id, found: Boolean(user) });
         if (!user) {
           done(null, false);
           return;
         }
         done(null, { id: user.id, name: user.name, email: user.email });
       })
-      .catch((err: unknown) => {
-        console.log('[auth debug] deserializeUser error', err instanceof Error ? err.message : err);
-        done(err);
-      });
+      .catch(done);
   });
 }
