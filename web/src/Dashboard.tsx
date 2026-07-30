@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   createMonth,
   fetchMonthDetail,
@@ -48,6 +49,12 @@ export default function Dashboard() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-slate-800">Finanzas en Pareja</h1>
         <div className="flex items-center gap-2">
+          <Link
+            to="/r"
+            className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-semibold text-white"
+          >
+            + Registrar gasto
+          </Link>
           <select
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
             value={selectedMonthId ?? ''}
@@ -157,25 +164,42 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           <h2 className="text-sm font-medium text-slate-500">
             Presupuesto por bolsa · total {formatCOP(summary.totalIncome)}
           </h2>
-          {summary.buckets.map((bucket) => (
-            <div key={bucket.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-slate-800">{bucket.name}</span>
-                <span className="text-xs text-slate-400">
-                  {bucket.percentage}% · {BUCKET_KIND_LABEL[bucket.kind] ?? bucket.kind}
-                </span>
-              </div>
-              <p className="mt-1 text-lg font-semibold text-slate-800">{formatCOP(bucket.budget)}</p>
-              <div className="mt-2 flex flex-col gap-1 text-sm text-slate-500">
-                {bucket.contributions.map((c) => (
-                  <div key={c.userId} className="flex justify-between">
-                    <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
-                    <span>{formatCOP(c.amount)}</span>
+          {summary.buckets.map((bucket) => {
+            const tracksSpending = bucket.kind === 'shared_expenses' || bucket.kind === 'personal';
+            const isOverspent = tracksSpending && Number(bucket.available) < 0;
+            return (
+              <div key={bucket.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-slate-800">{bucket.name}</span>
+                  <span className="text-xs text-slate-400">
+                    {bucket.percentage}% · {BUCKET_KIND_LABEL[bucket.kind] ?? bucket.kind}
+                  </span>
+                </div>
+                <p className="mt-1 text-lg font-semibold text-slate-800">{formatCOP(bucket.budget)}</p>
+                {tracksSpending && (
+                  <div className="mt-1 flex items-center gap-2 text-xs">
+                    <span className="text-slate-500">Gastado {formatCOP(bucket.spent)}</span>
+                    <span className={`font-semibold ${isOverspent ? 'text-red-600' : 'text-emerald-600'}`}>
+                      Disponible {formatCOP(bucket.available)}
+                    </span>
                   </div>
-                ))}
+                )}
+                <div className="mt-2 flex flex-col gap-1 text-sm text-slate-500">
+                  {bucket.contributions.map((c) => (
+                    <div key={c.userId} className="flex justify-between">
+                      <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
+                      <span>
+                        {formatCOP(c.amount)}
+                        {c.spent !== undefined && (
+                          <span className="ml-2 text-xs text-slate-400">gastado {formatCOP(c.spent)}</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </section>
       )}
     </div>

@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
+import { Route, Routes } from 'react-router-dom';
 import { fetchCurrentUser } from './lib/api';
 import Dashboard from './Dashboard';
+import QuickEntry from './QuickEntry';
 
 export default function App() {
   const { data: user, isLoading } = useQuery({
@@ -32,7 +34,10 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <Dashboard />
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/r" element={<QuickEntry currentUser={user} />} />
+      </Routes>
     </main>
   );
 }

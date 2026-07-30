@@ -12,6 +12,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new Error(body?.error?.message ?? `Error de red (${response.status})`);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -78,7 +81,9 @@ export type MonthBucketSummary = {
   splitMode: SplitMode;
   percentage: string;
   budget: string;
-  contributions: { userId: string; amount: string }[];
+  spent: string;
+  available: string;
+  contributions: { userId: string; amount: string; spent?: string }[];
 };
 
 export type MonthDetail = {
@@ -99,4 +104,54 @@ export type MonthSummaryDetail = {
 
 export async function fetchMonthSummary(monthId: string): Promise<MonthSummaryDetail> {
   return apiFetch<MonthSummaryDetail>(`/months/${monthId}/summary`);
+}
+
+export type QuickEntryType = 'personal' | 'joint';
+export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
+
+export type QuickEntry = {
+  id: string;
+  monthId: string;
+  userId: string;
+  createdBy: string;
+  amount: string;
+  description: string;
+  type: QuickEntryType;
+  date: string;
+  status: QuickEntryStatus;
+};
+
+export async function fetchQuickEntries(monthId: string, status?: QuickEntryStatus): Promise<QuickEntry[]> {
+  const query = new URLSearchParams({ monthId, ...(status ? { status } : {}) });
+  const body = await apiFetch<{ quickEntries: QuickEntry[] }>(`/quick-entries?${query.toString()}`);
+  return body.quickEntries;
+}
+
+export async function createQuickEntry(input: {
+  amount: string;
+  description: string;
+  type: QuickEntryType;
+  date?: string;
+  userId?: string;
+}): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>('/quick-entries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntry;
+}
+
+export async function updateQuickEntry(
+  id: string,
+  input: Partial<{ amount: string; description: string; type: QuickEntryType; date: string; userId: string }>,
+): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>(`/quick-entries/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntry;
+}
+
+export async function deleteQuickEntry(id: string): Promise<void> {
+  await apiFetch<void>(`/quick-entries/${id}`, { method: 'DELETE' });
 }
