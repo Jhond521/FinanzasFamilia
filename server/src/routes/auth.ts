@@ -30,9 +30,41 @@ authRouter.get(
     }
     passport.authenticate('google', {
       failureRedirect: `${process.env.APP_URL ?? ''}/cuenta-no-autorizada`,
+    }, (err: unknown, user: Express.User | false | null) => {
+      console.log('[auth debug] authenticate callback', {
+        err: err instanceof Error ? err.message : err,
+        hasUser: Boolean(user),
+        sessionID: req.sessionID,
+      });
+      if (err) {
+        next(err);
+        return;
+      }
+      if (!user) {
+        res.redirect(`${process.env.APP_URL ?? ''}/cuenta-no-autorizada`);
+        return;
+      }
+      req.logIn(user, (loginErr) => {
+        console.log('[auth debug] req.logIn result', {
+          loginErr: loginErr instanceof Error ? loginErr.message : loginErr,
+          sessionID: req.sessionID,
+        });
+        if (loginErr) {
+          next(loginErr);
+          return;
+        }
+        req.session.save((saveErr) => {
+          console.log('[auth debug] session.save result', {
+            saveErr: saveErr instanceof Error ? saveErr.message : saveErr,
+            sessionID: req.sessionID,
+          });
+          next();
+        });
+      });
     })(req, res, next);
   },
-  (_req, res) => {
+  (req, res) => {
+    console.log('[auth debug] redirecting to app', { sessionID: req.sessionID, user: req.user });
     res.redirect(process.env.APP_URL ?? '/');
   },
 );
