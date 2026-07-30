@@ -3,6 +3,7 @@ import { Prisma, type Month } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
+import { jointSpent, personalSpent } from '../services/spending';
 
 export const monthsRouter = Router();
 
@@ -195,19 +196,38 @@ monthsRouter.get('/:id/summary', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
 
-  const [incomes, monthBuckets] = await Promise.all([
+  const [incomes, monthBuckets, quickEntries] = await Promise.all([
     prisma.income.findMany({ where: { monthId: month.id } }),
     prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
+    prisma.quickEntry.findMany({ where: { monthId: month.id } }),
   ]);
 
   const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
+  const spendingEntries = quickEntries.map((entry) => ({
+    userId: entry.userId,
+    amount: entry.amount,
+    type: entry.type,
+    status: entry.status,
+  }));
 
   const buckets = monthBuckets.map((bucket) => {
     const budget = bucketBudget(bucket, total);
-    const contributions = incomes.map((income) => ({
-      userId: income.userId,
-      amount: personContribution(bucket, budget, income.amount, total).toString(),
-    }));
+    const contributions = incomes.map((income) => {
+      const spent = bucket.kind === 'personal' ? personalSpent(spendingEntries, income.userId) : null;
+      return {
+        userId: income.userId,
+        amount: personContribution(bucket, budget, income.amount, total).toString(),
+        ...(spent ? { spent: spent.toString() } : {}),
+      };
+    });
+
+    const spent =
+      bucket.kind === 'shared_expenses'
+        ? jointSpent(spendingEntries)
+        : bucket.kind === 'personal'
+          ? incomes.reduce((sum, income) => sum.plus(personalSpent(spendingEntries, income.userId)), budget.mul(0))
+          : budget.mul(0); // 0 con la misma precision que budget (savings/other no trackean gasto)
+
     return {
       id: bucket.id,
       name: bucket.name,
@@ -215,6 +235,8 @@ monthsRouter.get('/:id/summary', async (req, res) => {
       splitMode: bucket.splitMode,
       percentage: bucket.percentage.toString(),
       budget: budget.toString(),
+      spent: spent.toString(),
+      available: budget.minus(spent).toString(),
       contributions,
     };
   });

@@ -8,6 +8,7 @@ import { configurePassport } from './passport';
 import { authRouter } from './routes/auth';
 import { bucketsRouter } from './routes/buckets';
 import { monthsRouter } from './routes/months';
+import { quickEntriesRouter } from './routes/quickEntries';
 import { usersRouter } from './routes/users';
 
 const sessionSecret = process.env.SESSION_SECRET;
@@ -65,6 +66,7 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
 
 app.use('/api/buckets', requireAuth, bucketsRouter);
 app.use('/api/months', requireAuth, monthsRouter);
+app.use('/api/quick-entries', requireAuth, quickEntriesRouter);
 app.use('/api/users', requireAuth, usersRouter);
 
 if (isProduction) {
