@@ -17,7 +17,9 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  incomes Income[]
+  incomes            Income[]
+  quickEntries       QuickEntry[] @relation("QuickEntryOwner")
+  createdQuickEntries QuickEntry[] @relation("QuickEntryCreator")
 
   @@map("users")
 }
@@ -37,6 +39,17 @@ enum BucketKind {
 enum MonthStatus {
   open
   closed
+}
+
+enum QuickEntryType {
+  personal
+  joint
+}
+
+enum QuickEntryStatus {
+  pending
+  matched
+  no_match_expected
 }
 
 // Config general de rubros (plantilla). Se instancia como snapshot (MonthBucket)
@@ -68,6 +81,7 @@ model Month {
 
   incomes      Income[]
   monthBuckets MonthBucket[]
+  quickEntries QuickEntry[]
 
   @@unique([year, month])
   @@map("months")
@@ -107,4 +121,29 @@ model MonthBucket {
 
   @@unique([monthId, bucketId])
   @@map("month_buckets")
+}
+
+// Registro rapido de gasto (reemplaza WhatsApp, Fase 2). userId = de quien es el
+// gasto (para el reparto por bolsa); createdBy = quien lo registro (puede ser el otro).
+// matchedTransactionId (FK a una futura tabla transactions) se agrega en Fase 3 -
+// ese modelo todavia no existe.
+model QuickEntry {
+  id          String            @id @default(uuid())
+  monthId     String            @map("month_id")
+  userId      String            @map("user_id")
+  createdBy   String            @map("created_by")
+  amount      Decimal           @db.Decimal(14, 2)
+  description String
+  type        QuickEntryType
+  date        DateTime          @db.Date
+  status      QuickEntryStatus  @default(pending)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  month   Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user    User  @relation("QuickEntryOwner", fields: [userId], references: [id])
+  creator User  @relation("QuickEntryCreator", fields: [createdBy], references: [id])
+
+  @@index([monthId, status])
+  @@map("quick_entries")
 }
