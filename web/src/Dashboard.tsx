@@ -8,6 +8,7 @@ import {
   fetchUsers,
   replaceMonthIncomes,
 } from './lib/api';
+import { CurrencyInput } from './CurrencyInput';
 import { formatCOP, MESES } from './lib/money';
 
 const BUCKET_KIND_LABEL: Record<string, string> = {
@@ -132,14 +133,11 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           {users.map((user) => (
             <label key={user.id} className="flex items-center justify-between gap-3">
               <span className="text-slate-700">{user.name}</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                className="w-40 rounded-lg border border-slate-300 px-3 py-2 text-right"
+              <CurrencyInput
+                className="w-40"
                 value={amounts[user.id] ?? ''}
-                onChange={(e) => setAmounts((prev) => ({ ...prev, [user.id]: e.target.value }))}
+                onChange={(rawValue) => setAmounts((prev) => ({ ...prev, [user.id]: rawValue }))}
                 disabled={isClosed}
-                placeholder="0"
               />
             </label>
           ))}
