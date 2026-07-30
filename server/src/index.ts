@@ -19,6 +19,12 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Railway termina TLS en su edge y reenvia por HTTP interno: sin esto, express-session
+// no reconoce la conexion como segura y la cookie con secure:true nunca queda activa.
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
+
 const PgSession = ConnectPgSimple(session);
 
 app.use(express.json());
