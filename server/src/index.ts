@@ -6,6 +6,9 @@ import ConnectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
 import { configurePassport } from './passport';
 import { authRouter } from './routes/auth';
+import { bucketsRouter } from './routes/buckets';
+import { monthsRouter } from './routes/months';
+import { usersRouter } from './routes/users';
 
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
@@ -45,6 +48,18 @@ app.use('/api/auth', authRouter);
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
+
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({ error: { code: 'unauthenticated', message: 'No hay sesion activa' } });
+    return;
+  }
+  next();
+}
+
+app.use('/api/buckets', requireAuth, bucketsRouter);
+app.use('/api/months', requireAuth, monthsRouter);
+app.use('/api/users', requireAuth, usersRouter);
 
 if (isProduction) {
   const webDist = path.join(__dirname, '../../web/dist');

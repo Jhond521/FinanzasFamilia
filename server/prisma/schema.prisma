@@ -8,7 +8,7 @@ datasource db {
 }
 
 // Fase 0: solo usuarios (John y Lina), login con Google.
-// El resto del modelo (months, buckets, transactions, ...) se agrega
+// El resto del modelo (transactions, rules, cards, ...) se agrega
 // en migraciones posteriores, fase por fase (ver docs/02-modelo-de-datos.md).
 model User {
   id        String   @id @default(uuid())
@@ -17,5 +17,94 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  incomes Income[]
+
   @@map("users")
+}
+
+enum SplitMode {
+  proportional
+  half
+}
+
+enum BucketKind {
+  savings
+  personal
+  shared_expenses
+  other
+}
+
+enum MonthStatus {
+  open
+  closed
+}
+
+// Config general de rubros (plantilla). Se instancia como snapshot (MonthBucket)
+// al crear un mes; cambiarla no afecta meses ya creados.
+model Bucket {
+  id         String     @id @default(uuid())
+  name       String
+  percentage Decimal    @db.Decimal(5, 2)
+  splitMode  SplitMode  @map("split_mode")
+  kind       BucketKind
+  active     Boolean    @default(true)
+  sortOrder  Int        @map("sort_order")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  monthBuckets MonthBucket[]
+
+  @@map("buckets")
+}
+
+model Month {
+  id        String      @id @default(uuid())
+  year      Int
+  month     Int
+  status    MonthStatus @default(open)
+  closedAt  DateTime?   @map("closed_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  incomes      Income[]
+  monthBuckets MonthBucket[]
+
+  @@unique([year, month])
+  @@map("months")
+}
+
+model Income {
+  id        String   @id @default(uuid())
+  monthId   String   @map("month_id")
+  userId    String   @map("user_id")
+  label     String
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  month Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("incomes")
+}
+
+// Snapshot editable del rubro dentro de un mes; se copia de Bucket al crear
+// el mes y se congela al cerrarlo. bucketId nulo = rubro agregado solo ese mes.
+model MonthBucket {
+  id         String     @id @default(uuid())
+  monthId    String     @map("month_id")
+  bucketId   String?    @map("bucket_id")
+  name       String
+  percentage Decimal    @db.Decimal(5, 2)
+  splitMode  SplitMode  @map("split_mode")
+  kind       BucketKind
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  month  Month   @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  bucket Bucket? @relation(fields: [bucketId], references: [id])
+
+  @@unique([monthId, bucketId])
+  @@map("month_buckets")
 }
