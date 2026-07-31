@@ -7,8 +7,12 @@ import passport from 'passport';
 import { configurePassport } from './passport';
 import { authRouter } from './routes/auth';
 import { bucketsRouter } from './routes/buckets';
+import { categoriesRouter } from './routes/categories';
+import { importsRouter, skippedDuplicatesRouter } from './routes/imports';
 import { monthsRouter } from './routes/months';
 import { quickEntriesRouter } from './routes/quickEntries';
+import { rulesRouter } from './routes/rules';
+import { transactionsRouter } from './routes/transactions';
 import { usersRouter } from './routes/users';
 
 const sessionSecret = process.env.SESSION_SECRET;
@@ -65,8 +69,13 @@ function requireAuth(req: express.Request, res: express.Response, next: express.
 }
 
 app.use('/api/buckets', requireAuth, bucketsRouter);
+app.use('/api/categories', requireAuth, categoriesRouter);
+app.use('/api/imports', requireAuth, importsRouter);
+app.use('/api/skipped-duplicates', requireAuth, skippedDuplicatesRouter);
 app.use('/api/months', requireAuth, monthsRouter);
 app.use('/api/quick-entries', requireAuth, quickEntriesRouter);
+app.use('/api/rules', requireAuth, rulesRouter);
+app.use('/api/transactions', requireAuth, transactionsRouter);
 app.use('/api/users', requireAuth, usersRouter);
 
 if (isProduction) {

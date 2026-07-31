@@ -196,19 +196,30 @@ monthsRouter.get('/:id/summary', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
 
-  const [incomes, monthBuckets, quickEntries] = await Promise.all([
+  const [incomes, monthBuckets, quickEntries, transactions] = await Promise.all([
     prisma.income.findMany({ where: { monthId: month.id } }),
     prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
     prisma.quickEntry.findMany({ where: { monthId: month.id } }),
+    prisma.transaction.findMany({ where: { monthId: month.id, type: { in: ['personal', 'joint'] } } }),
   ]);
 
   const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
-  const spendingEntries = quickEntries.map((entry) => ({
-    userId: entry.userId,
-    amount: entry.amount,
-    type: entry.type,
-    status: entry.status,
-  }));
+  // Gastado = quick_entries no-matched (Fase 2) + transactions personal/joint (Fase 3). Un
+  // quick_entry matched ya no cuenta aqui (countableAmount lo excluye) porque su transaction
+  // asociada si esta en esta lista — evita doble conteo (RF3/RF5).
+  const spendingEntries = [
+    ...quickEntries.map((entry) => ({
+      userId: entry.userId,
+      amount: entry.amount,
+      type: entry.type,
+      status: entry.status,
+    })),
+    ...transactions.map((tx) => ({
+      userId: tx.ownerUserId,
+      amount: tx.amount,
+      type: tx.type as 'personal' | 'joint',
+    })),
+  ];
 
   const buckets = monthBuckets.map((bucket) => {
     const budget = bucketBudget(bucket, total);

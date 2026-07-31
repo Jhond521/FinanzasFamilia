@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { Prisma, type QuickEntry } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { toDateOnly } from '../lib/dates';
 
 export const quickEntriesRouter = Router();
 
@@ -21,12 +22,18 @@ const createQuickEntrySchema = z.object({
   userId: z.string().uuid().optional(),
 });
 
+// 'matched' no es asignable a mano: solo lo pone el pipeline de import/match (Fase 3) al
+// conciliar con una transaccion. Lo unico editable manualmente es marcar/desmarcar
+// "no se espera match" (ej. gasto en efectivo que nunca va a aparecer en el extracto).
+const MANUALLY_SETTABLE_STATUSES = ['pending', 'no_match_expected'] as const;
+
 const updateQuickEntrySchema = z.object({
   amount: z.union([z.string(), z.number()]).optional(),
   description: z.string().trim().min(1).optional(),
   type: z.enum(QUICK_ENTRY_TYPES).optional(),
   date: dateSchema.optional(),
   userId: z.string().uuid().optional(),
+  status: z.enum(MANUALLY_SETTABLE_STATUSES).optional(),
 });
 
 function badRequest(res: import('express').Response, code: string, message: string): void {
@@ -44,7 +51,7 @@ function todayDateOnly(): string {
 
 /** El campo `date` es DateTime en Prisma (medianoche UTC); la API expone solo YYYY-MM-DD (docs/03-api.md). */
 function serializeQuickEntry(entry: QuickEntry) {
-  return { ...entry, date: entry.date.toISOString().slice(0, 10) };
+  return { ...entry, date: toDateOnly(entry.date) };
 }
 
 /** Busca el Month (year/month) al que pertenece una fecha YYYY-MM-DD. */
@@ -144,6 +151,7 @@ quickEntriesRouter.put('/:id', async (req, res) => {
       description: data.description ?? existing.description,
       type: data.type ?? existing.type,
       date: data.date ? parseDateOnly(data.date) : existing.date,
+      status: data.status ?? existing.status,
     },
   });
   res.json({ quickEntry: serializeQuickEntry(quickEntry) });
