@@ -155,29 +155,29 @@ export default function QuickEntry({ currentUser }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 p-4 pb-10">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-800">{editingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-white">
+        <h1 className="text-xl font-semibold text-ink">{editingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">
           {currentUser.name.charAt(0)}
         </div>
       </header>
 
       {!currentMonth && (
-        <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+        <p className="rounded-lg bg-warning-light p-3 text-sm text-warning">
           Todavia no hay un mes abierto — crea el mes actual desde el dashboard antes de registrar gastos.
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-xl border border-slate-200 bg-white p-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-xl border border-line bg-white p-4">
         <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" />
 
-        <div className="flex rounded-xl bg-slate-100 p-1">
+        <div className="flex rounded-xl bg-cream-surface p-1">
           {(['personal', 'joint'] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setType(t)}
               className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-                type === t ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                type === t ? 'bg-white text-ink shadow-sm' : 'text-ink-muted'
               }`}
             >
               {TYPE_LABEL[t]}
@@ -186,24 +186,24 @@ export default function QuickEntry({ currentUser }: Props) {
         </div>
 
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Descripcion</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Descripcion</span>
           <input
             type="text"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Almuerzo con Camila"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-line px-3 py-2 text-sm"
           />
         </label>
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Fecha</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Fecha</span>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setDateMode('today')}
               className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-                dateMode === 'today' ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600'
+                dateMode === 'today' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
               Hoy
@@ -212,7 +212,7 @@ export default function QuickEntry({ currentUser }: Props) {
               type="button"
               onClick={() => setDateMode('yesterday')}
               className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-                dateMode === 'yesterday' ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600'
+                dateMode === 'yesterday' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
               Ayer
@@ -221,7 +221,7 @@ export default function QuickEntry({ currentUser }: Props) {
               type="button"
               onClick={() => setDateMode('custom')}
               className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-                dateMode === 'custom' ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600'
+                dateMode === 'custom' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
               Otro dia…
@@ -234,13 +234,13 @@ export default function QuickEntry({ currentUser }: Props) {
               min={monthMinDate}
               max={monthMaxDate}
               onChange={(e) => setCustomDate(e.target.value)}
-              className="mt-2 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              className="mt-2 rounded-lg border border-line px-3 py-2 text-sm"
             />
           )}
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-bold uppercase tracking-wide text-slate-500">¿Quien?</span>
+          <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">¿Quien?</span>
           <div className="flex gap-2">
             {users?.map((u) => (
               <button
@@ -248,7 +248,7 @@ export default function QuickEntry({ currentUser }: Props) {
                 type="button"
                 onClick={() => setUserId(u.id)}
                 className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
-                  userId === u.id ? 'border border-slate-800 bg-slate-100 text-slate-800' : 'border border-slate-300 text-slate-600'
+                  userId === u.id ? 'border border-brand bg-brand-light text-brand' : 'border border-line text-ink-soft'
                 }`}
               >
                 {u.name}
@@ -257,14 +257,14 @@ export default function QuickEntry({ currentUser }: Props) {
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-danger">{error}</p>}
 
         <div className="flex gap-2">
           {editingId && (
             <button
               type="button"
               onClick={resetForm}
-              className="rounded-xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600"
+              className="rounded-xl border border-line px-4 py-3 text-sm font-semibold text-ink-soft"
             >
               Cancelar
             </button>
@@ -272,7 +272,7 @@ export default function QuickEntry({ currentUser }: Props) {
           <button
             type="submit"
             disabled={saveMutation.isPending || !currentMonth}
-            className="flex-1 rounded-xl bg-slate-800 py-3 text-base font-extrabold text-white disabled:opacity-50"
+            className="flex-1 rounded-xl bg-brand py-3 text-base font-extrabold text-white transition hover:bg-brand-hover disabled:opacity-50"
           >
             {saveMutation.isPending ? 'Guardando…' : 'Guardar'}
           </button>
@@ -281,23 +281,23 @@ export default function QuickEntry({ currentUser }: Props) {
 
       {recentEntries && recentEntries.length > 0 && (
         <section className="flex flex-col gap-1">
-          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Ultimos registros</h2>
-          <div className="flex flex-col divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white">
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">Ultimos registros</h2>
+          <div className="flex flex-col divide-y divide-line rounded-xl border border-line bg-white">
             {recentEntries.slice(0, 10).map((entry) => {
               const owner = users?.find((u) => u.id === entry.userId);
               return (
                 <div key={entry.id} className="flex items-center justify-between gap-3 px-4 py-3">
                   <button type="button" onClick={() => startEdit(entry)} className="flex-1 text-left">
-                    <div className="text-sm font-semibold text-slate-800">{entry.description}</div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-sm font-semibold text-ink">{entry.description}</div>
+                    <div className="text-xs text-ink-muted">
                       {formatEntryDate(entry.date)} · {TYPE_LABEL[entry.type]} · {owner?.name ?? '—'}
                     </div>
                   </button>
-                  <span className="text-sm font-bold text-slate-800">{formatCOP(entry.amount)}</span>
+                  <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>
                   <button
                     type="button"
                     onClick={() => deleteMutation.mutate(entry.id)}
-                    className="text-xs font-semibold text-red-600"
+                    className="text-xs font-semibold text-danger"
                     aria-label={`Borrar ${entry.description}`}
                   >
                     Borrar
