@@ -176,7 +176,12 @@ transactionsRouter.post('/:id/match', async (req, res) => {
     badRequest(res, 'invalid_quick_entry', 'El registro rapido no existe o ya no esta pendiente');
     return;
   }
-  if (!new Decimal(quickEntry.amount).equals(new Decimal(transaction.amount)) || quickEntry.userId !== transaction.ownerUserId) {
+  // Monto exacto en valor absoluto (RF5) — mismo criterio que findMatchCandidates: una
+  // transaction real puede llegar con signo distinto al del quick_entry (siempre negativo).
+  if (
+    !new Decimal(quickEntry.amount).abs().equals(new Decimal(transaction.amount).abs()) ||
+    quickEntry.userId !== transaction.ownerUserId
+  ) {
     badRequest(res, 'not_a_candidate', 'Ese registro rapido no es un candidato valido para esta transaccion');
     return;
   }

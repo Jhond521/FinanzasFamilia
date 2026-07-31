@@ -49,4 +49,12 @@ describe('findMatchCandidates', () => {
     ]);
     expect(result.map((e) => e.id).sort()).toEqual(['qe1', 'qe2']);
   });
+
+  it('matchea aunque los signos no coincidan (RF5: "monto exacto (|valor|)", caso real reportado)', () => {
+    // Un quick_entry siempre se guarda negativo (regla de Fase 2), pero la transaction real puede
+    // llegar positiva segun como el banco registre ese movimiento puntual (ej. "TRANSF DE ..." en
+    // vez de "TRANSF A ..."). Debe matchear igual: es el mismo gasto en plata.
+    const result = findMatchCandidates(johnTx({ amount: '84661' }), [johnEntry({ amount: '-84661' })]);
+    expect(result).toHaveLength(1);
+  });
 });
