@@ -17,9 +17,12 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  incomes            Income[]
-  quickEntries       QuickEntry[] @relation("QuickEntryOwner")
-  createdQuickEntries QuickEntry[] @relation("QuickEntryCreator")
+  incomes               Income[]
+  quickEntries          QuickEntry[]  @relation("QuickEntryOwner")
+  createdQuickEntries   QuickEntry[]  @relation("QuickEntryCreator")
+  transactionsOwned     Transaction[] @relation("TransactionOwner")
+  importBatchesOwned    ImportBatch[] @relation("ImportBatchOwner")
+  importBatchesUploaded ImportBatch[] @relation("ImportBatchUploader")
 
   @@map("users")
 }
@@ -52,6 +55,55 @@ enum QuickEntryStatus {
   no_match_expected
 }
 
+enum TransactionType {
+  personal
+  joint
+  movement
+  unclassified
+}
+
+// set_type de Rule y suggested_type de Transaction nunca proponen 'unclassified'
+// (es el estado por defecto de una Transaction sin clasificar, no algo que una regla asigne).
+enum RuleSetType {
+  personal
+  joint
+  movement
+}
+
+enum ClassifiedBy {
+  rule
+  match
+  user
+}
+
+enum RuleMode {
+  auto
+  suggest
+}
+
+enum AmountSign {
+  any
+  positive
+  negative
+}
+
+enum RuleOrigin {
+  seed
+  user
+  learned
+}
+
+enum SkippedDuplicateResolution {
+  pending
+  confirmed_duplicate
+  forced_twin
+}
+
+enum ImportBatchStatus {
+  done
+  undone
+}
+
 // Config general de rubros (plantilla). Se instancia como snapshot (MonthBucket)
 // al crear un mes; cambiarla no afecta meses ya creados.
 model Bucket {
@@ -79,9 +131,11 @@ model Month {
   createdAt DateTime    @default(now()) @map("created_at")
   updatedAt DateTime    @updatedAt @map("updated_at")
 
-  incomes      Income[]
-  monthBuckets MonthBucket[]
-  quickEntries QuickEntry[]
+  incomes       Income[]
+  monthBuckets  MonthBucket[]
+  quickEntries  QuickEntry[]
+  transactions  Transaction[]
+  importBatches ImportBatch[]
 
   @@unique([year, month])
   @@map("months")
@@ -128,22 +182,142 @@ model MonthBucket {
 // matchedTransactionId (FK a una futura tabla transactions) se agrega en Fase 3 -
 // ese modelo todavia no existe.
 model QuickEntry {
-  id          String            @id @default(uuid())
-  monthId     String            @map("month_id")
-  userId      String            @map("user_id")
-  createdBy   String            @map("created_by")
-  amount      Decimal           @db.Decimal(14, 2)
-  description String
-  type        QuickEntryType
-  date        DateTime          @db.Date
-  status      QuickEntryStatus  @default(pending)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
+  id                   String           @id @default(uuid())
+  monthId              String           @map("month_id")
+  userId               String           @map("user_id")
+  createdBy            String           @map("created_by")
+  amount               Decimal          @db.Decimal(14, 2)
+  description          String
+  type                 QuickEntryType
+  date                 DateTime         @db.Date
+  status               QuickEntryStatus @default(pending)
+  matchedTransactionId String?          @unique @map("matched_transaction_id")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
-  month   Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
-  user    User  @relation("QuickEntryOwner", fields: [userId], references: [id])
-  creator User  @relation("QuickEntryCreator", fields: [createdBy], references: [id])
+  month              Month        @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user               User         @relation("QuickEntryOwner", fields: [userId], references: [id])
+  creator            User         @relation("QuickEntryCreator", fields: [createdBy], references: [id])
+  matchedTransaction Transaction? @relation("QuickEntryMatch", fields: [matchedTransactionId], references: [id])
 
   @@index([monthId, status])
   @@map("quick_entries")
+}
+
+// ---- Fase 3: importacion + clasificacion (docs/02-modelo-de-datos.md) ----
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  active    Boolean  @default(true)
+  sortOrder Int      @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rulesAsSetCategory    Rule[]        @relation("RuleSetCategory")
+  transactions          Transaction[] @relation("TransactionCategory")
+  suggestedTransactions Transaction[] @relation("TransactionSuggestedCategory")
+
+  @@map("categories")
+}
+
+// Motor de clasificacion determinístico (RF5). match_field queda fijo en "bank_description"
+// hoy (unico campo soportado); se deja como columna por si a futuro se agregan mas.
+model Rule {
+  id            String      @id @default(uuid())
+  pattern       String
+  matchField    String      @default("bank_description") @map("match_field")
+  amountSign    AmountSign  @default(any) @map("amount_sign")
+  setType       RuleSetType @map("set_type")
+  setCategoryId String?     @map("set_category_id")
+  setDetail     String?     @map("set_detail")
+  mode          RuleMode
+  active        Boolean     @default(true)
+  hitCount      Int         @default(0) @map("hit_count")
+  createdFrom   RuleOrigin  @map("created_from")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  setCategory  Category?     @relation("RuleSetCategory", fields: [setCategoryId], references: [id])
+  transactions Transaction[]
+
+  @@map("rules")
+}
+
+model ImportBatch {
+  id             String            @id @default(uuid())
+  monthId        String            @map("month_id")
+  ownerUserId    String            @map("owner_user_id")
+  filename       String
+  uploadedBy     String            @map("uploaded_by")
+  rowCount       Int               @map("row_count")
+  importedCount  Int               @map("imported_count")
+  duplicateCount Int               @map("duplicate_count")
+  status         ImportBatchStatus @default(done)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  month             Month              @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  owner             User               @relation("ImportBatchOwner", fields: [ownerUserId], references: [id])
+  uploader          User               @relation("ImportBatchUploader", fields: [uploadedBy], references: [id])
+  transactions      Transaction[]
+  skippedDuplicates SkippedDuplicate[]
+
+  @@map("import_batches")
+}
+
+// Filas del archivo detectadas como duplicado de algo ya en BD (mismo mes+dueño), guardadas
+// para la pantalla de revision en vez de descartarse directo (docs/02, seccion Deduplicacion).
+model SkippedDuplicate {
+  id                  String                     @id @default(uuid())
+  importBatchId       String                     @map("import_batch_id")
+  dedupeKey           String                     @map("dedupe_key")
+  date                DateTime                   @db.Date
+  bankDescription     String                     @map("bank_description")
+  bankReference       String?                    @map("bank_reference")
+  amount              Decimal                    @db.Decimal(14, 2)
+  resolution          SkippedDuplicateResolution @default(pending)
+  forcedTransactionId String?                    @unique @map("forced_transaction_id")
+  createdAt           DateTime                   @default(now()) @map("created_at")
+  updatedAt           DateTime                   @updatedAt @map("updated_at")
+
+  importBatch       ImportBatch  @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  forcedTransaction Transaction? @relation("ForcedTwin", fields: [forcedTransactionId], references: [id])
+
+  @@map("skipped_duplicates")
+}
+
+model Transaction {
+  id                  String           @id @default(uuid())
+  monthId             String           @map("month_id")
+  ownerUserId         String           @map("owner_user_id")
+  importBatchId       String           @map("import_batch_id")
+  date                DateTime         @db.Date
+  bankDescription     String           @map("bank_description")
+  bankReference       String?          @map("bank_reference")
+  amount              Decimal          @db.Decimal(14, 2)
+  type                TransactionType  @default(unclassified)
+  categoryId          String?          @map("category_id")
+  detail              String?
+  classifiedBy        ClassifiedBy?    @map("classified_by")
+  ruleId              String?          @map("rule_id")
+  dedupeKey           String           @map("dedupe_key")
+  needsReview         Boolean          @default(true) @map("needs_review")
+  suggestedType       TransactionType? @map("suggested_type")
+  suggestedCategoryId String?          @map("suggested_category_id")
+  suggestedDetail     String?          @map("suggested_detail")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  month                      Month             @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  owner                      User              @relation("TransactionOwner", fields: [ownerUserId], references: [id])
+  importBatch                ImportBatch       @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  category                   Category?         @relation("TransactionCategory", fields: [categoryId], references: [id])
+  suggestedCategory          Category?         @relation("TransactionSuggestedCategory", fields: [suggestedCategoryId], references: [id])
+  rule                       Rule?             @relation(fields: [ruleId], references: [id])
+  matchedQuickEntry          QuickEntry?       @relation("QuickEntryMatch")
+  forcedFromSkippedDuplicate SkippedDuplicate? @relation("ForcedTwin")
+
+  @@index([monthId, dedupeKey])
+  @@map("transactions")
 }
