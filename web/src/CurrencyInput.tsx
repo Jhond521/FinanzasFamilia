@@ -5,6 +5,8 @@ type CurrencyInputProps = {
   /** Monto como string decimal (lo que viaja hacia/desde la API), ej. "11439100.5" o "". */
   value: string;
   onChange: (rawValue: string) => void;
+  /** Se dispara al perder el foco — util para confirmar/guardar el valor (ej. PUT al salir del campo). */
+  onBlur?: () => void;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -15,6 +17,7 @@ type CurrencyInputProps = {
 export function CurrencyInput({
   value,
   onChange,
+  onBlur,
   disabled,
   placeholder = '0',
   className = '',
@@ -52,6 +55,7 @@ export function CurrencyInput({
         }
         value={display}
         onChange={handleChange}
+        onBlur={onBlur}
         disabled={disabled}
         placeholder={placeholder}
       />

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Route, Routes } from 'react-router-dom';
 import { fetchCurrentUser } from './lib/api';
+import CardsScreen from './CardsScreen';
 import ConfigurationScreen from './ConfigurationScreen';
 import Dashboard from './Dashboard';
 import ImportScreen from './ImportScreen';
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/importar" element={<ImportScreen />} />
             <Route path="/revisar" element={<ReviewQueueScreen />} />
             <Route path="/transacciones" element={<TransactionsScreen />} />
+            <Route path="/tarjetas" element={<CardsScreen />} />
             <Route path="/configuracion" element={<ConfigurationScreen />} />
           </>
         ) : (

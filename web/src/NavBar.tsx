@@ -5,6 +5,7 @@ const LINKS = [
   { to: '/importar', label: 'Importar' },
   { to: '/revisar', label: 'Revisar' },
   { to: '/transacciones', label: 'Transacciones' },
+  { to: '/tarjetas', label: 'Tarjetas' },
   { to: '/configuracion', label: 'Configuración' },
 ];
 

@@ -379,3 +379,86 @@ export async function bulkConfirmSkippedDuplicates(batchId: string): Promise<num
   });
   return body.confirmed;
 }
+
+// ---- Fase 4: tarjetas Nu Bank ----
+
+export type CreditCard = { id: string; name: string; ownerUserId: string; active: boolean; owner?: User };
+
+export async function fetchCards(): Promise<CreditCard[]> {
+  const body = await apiFetch<{ cards: CreditCard[] }>('/cards');
+  return body.cards;
+}
+
+export type CardItemType = 'personal' | 'joint';
+
+export type CardItem = {
+  id: string;
+  cardMonthId: string;
+  description: string;
+  date: string | null;
+  amount: string;
+  type: CardItemType;
+  isAdjustment: boolean;
+};
+
+export type CardDiffStatus = 'matched' | 'short' | 'over';
+
+export type CardMonthDetail = {
+  cardMonth: { id: string; creditCardId: string; monthId: string; amountPaid: string };
+  items: CardItem[];
+  itemsTotal: string;
+  diff: string;
+  diffStatus: CardDiffStatus;
+  split: { personal: string; joint: string; personalPercentage: string; jointPercentage: string };
+};
+
+export async function fetchCardMonth(cardId: string, monthId: string): Promise<CardMonthDetail> {
+  return apiFetch<CardMonthDetail>(`/cards/${cardId}/months/${monthId}`);
+}
+
+export type CardMutationResult = { itemsTotal: string; diff: string; diffStatus: CardDiffStatus };
+
+export async function updateCardMonthAmountPaid(
+  cardMonthId: string,
+  amountPaid: string,
+): Promise<CardMutationResult & { cardMonth: { id: string; amountPaid: string } }> {
+  return apiFetch(`/card-months/${cardMonthId}`, { method: 'PUT', body: JSON.stringify({ amountPaid }) });
+}
+
+export type CardItemInput = {
+  description: string;
+  date?: string;
+  amount: string;
+  type: CardItemType;
+  isAdjustment?: boolean;
+};
+
+export async function createCardItem(
+  cardMonthId: string,
+  input: CardItemInput,
+): Promise<CardMutationResult & { item: CardItem }> {
+  return apiFetch(`/card-months/${cardMonthId}/items`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function updateCardItem(
+  id: string,
+  input: Partial<CardItemInput>,
+): Promise<CardMutationResult & { item: CardItem }> {
+  return apiFetch(`/card-items/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export async function deleteCardItem(id: string): Promise<CardMutationResult> {
+  return apiFetch(`/card-items/${id}`, { method: 'DELETE' });
+}
+
+export type ParsedNuRow = { date: string; description: string; amount: string };
+
+export async function importNuStatement(cardMonthId: string, file: File): Promise<ParsedNuRow[]> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const body = await apiFetch<{ items: ParsedNuRow[] }>(`/card-months/${cardMonthId}/import`, {
+    method: 'POST',
+    body: formData,
+  });
+  return body.items;
+}
