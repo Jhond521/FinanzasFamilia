@@ -40,6 +40,24 @@ describe('sanitizeAmountInput', () => {
   it('conserva el separador decimal recien escrito aunque no haya digitos despues', () => {
     expect(sanitizeAmountInput('1234,')).toBe('1234.');
   });
+
+  it('no confunde el punto de miles ya formateado con un decimal al seguir escribiendo (regresion)', () => {
+    // El input llega con "1.2345": el punto de miles de un render anterior ("1.234") mas el
+    // digito nuevo. Debe seguir leyendose como el entero 12345, no como "1,23" + resto perdido.
+    expect(sanitizeAmountInput('1.2345')).toBe('12345');
+  });
+
+  it('sigue agrupando de miles en el cruce del segundo separador (7 digitos)', () => {
+    expect(sanitizeAmountInput('123.4567')).toBe('1234567');
+  });
+
+  it('no reinterpreta un numero ya agrupado con dos puntos de miles', () => {
+    expect(sanitizeAmountInput('11.000.000')).toBe('11000000');
+  });
+
+  it('trunca (no reinterpreta como miles) un tercer decimal escrito tras la coma', () => {
+    expect(sanitizeAmountInput('11000000,501')).toBe('11000000.50');
+  });
 });
 
 describe('formatAmountDisplay', () => {
