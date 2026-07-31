@@ -13,6 +13,16 @@ describe('normalizeBancolombiaRow', () => {
     expect(row.date).toBe('2026-06-01');
   });
 
+  it('acepta fecha con mes primero y año de 2 digitos "7/31/26" (formato real de Bancolombia)', () => {
+    const row = normalizeBancolombiaRow({ Fecha: '7/31/26', Descripción: 'CARULLA BOGOTA', Valor: '-132900' });
+    expect(row.date).toBe('2026-07-31');
+  });
+
+  it('acepta fecha con mes primero y año de 4 digitos "07/05/2026"', () => {
+    const row = normalizeBancolombiaRow({ Fecha: '07/05/2026', Descripción: 'CARULLA BOGOTA', Valor: '-132900' });
+    expect(row.date).toBe('2026-07-05');
+  });
+
   it('acepta la fecha ya como Date (celda tipada como fecha en el xlsx)', () => {
     const row = normalizeBancolombiaRow({
       Fecha: new Date('2026-06-15T00:00:00.000Z'),

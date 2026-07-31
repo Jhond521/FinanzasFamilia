@@ -23,8 +23,10 @@ export function readBancolombiaWorkbook(buffer: Buffer): BancolombiaRawRow[] {
 
 /**
  * Normaliza una fila cruda del extracto Bancolombia (Fecha, Descripción, Referencia, Valor) al
- * formato interno. Tolerante a fechas "2026/06/01" y "2026/6/1" (o ya como Date si la celda vino
- * tipada como fecha), y a montos con "$" y comas de miles (docs/01-prd.md RF4).
+ * formato interno. Tolerante a fechas "2026/06/01" y "2026/6/1" (año primero) y a "7/31/26" o
+ * "07/31/2026" (mes primero, como exportan los archivos reales de Bancolombia — el mes va
+ * primero, MM/DD/AA(AA), no DD/MM como el uso hablado en Colombia), o ya como Date si la celda
+ * vino tipada como fecha. Tambien tolerante a montos con "$" y comas de miles (docs/01-prd.md RF4).
  */
 export function normalizeBancolombiaRow(row: BancolombiaRawRow): ParsedTransactionRow {
   return {
@@ -40,12 +42,23 @@ function normalizeDate(value: string | number | Date): string {
     return value.toISOString().slice(0, 10);
   }
   const str = String(value).trim();
-  const match = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
-  if (!match) {
-    throw new Error(`Fecha invalida en el extracto: "${str}"`);
+
+  // Año primero: "2026/06/01" o "2026-6-1".
+  const yearFirst = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+  if (yearFirst) {
+    const [, year, month, day] = yearFirst;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
-  const [, year, month, day] = match;
-  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+  // Mes primero: "7/31/26" o "07/31/2026" (MM/DD/AA(AA), formato real de Bancolombia).
+  const monthFirst = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (monthFirst) {
+    const [, month, day, yearRaw] = monthFirst;
+    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  throw new Error(`Fecha invalida en el extracto: "${str}"`);
 }
 
 function normalizeAmount(value: string | number): string {
