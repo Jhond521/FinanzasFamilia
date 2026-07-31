@@ -111,6 +111,16 @@ async function main(): Promise<void> {
     }
   }
   console.log(`Seed completado: ${SEED_RULES.length} reglas semilla (RF5)`);
+
+  // Fase 4 (RF6): cada persona tiene su propia tarjeta Nu Bank.
+  for (const user of SEED_USERS) {
+    const owner = await prisma.user.findUniqueOrThrow({ where: { email: user.email } });
+    const existing = await prisma.creditCard.findFirst({ where: { ownerUserId: owner.id, name: 'Nu Bank' } });
+    if (!existing) {
+      await prisma.creditCard.create({ data: { name: 'Nu Bank', ownerUserId: owner.id } });
+    }
+  }
+  console.log('Seed completado: tarjetas Nu Bank (John y Lina)');
 }
 
 main()

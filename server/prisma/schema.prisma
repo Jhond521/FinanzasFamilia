@@ -23,6 +23,7 @@ model User {
   transactionsOwned     Transaction[] @relation("TransactionOwner")
   importBatchesOwned    ImportBatch[] @relation("ImportBatchOwner")
   importBatchesUploaded ImportBatch[] @relation("ImportBatchUploader")
+  creditCards           CreditCard[]  @relation("CreditCardOwner")
 
   @@map("users")
 }
@@ -136,6 +137,7 @@ model Month {
   quickEntries  QuickEntry[]
   transactions  Transaction[]
   importBatches ImportBatch[]
+  cardMonths    CardMonth[]
 
   @@unique([year, month])
   @@map("months")
@@ -320,4 +322,57 @@ model Transaction {
 
   @@index([monthId, dedupeKey])
   @@map("transactions")
+}
+
+// ---- Fase 4: tarjetas de credito Nu Bank (docs/02-modelo-de-datos.md) ----
+// Modulo independiente: no participa de bolsas, dashboard ni cierre de mes (RF6).
+
+model CreditCard {
+  id          String   @id @default(uuid())
+  name        String
+  ownerUserId String   @map("owner_user_id")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  owner      User        @relation("CreditCardOwner", fields: [ownerUserId], references: [id])
+  cardMonths CardMonth[]
+
+  @@map("credit_cards")
+}
+
+// Ciclo mensual de una tarjeta. Se crea "get-or-create" (amount_paid=0) la primera vez que se
+// pide para un (tarjeta, mes) — no hay un POST explicito en docs/03-api.md.
+model CardMonth {
+  id           String   @id @default(uuid())
+  creditCardId String   @map("credit_card_id")
+  monthId      String   @map("month_id")
+  amountPaid   Decimal  @default(0) @map("amount_paid") @db.Decimal(14, 2)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  creditCard CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
+  month      Month      @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  items      CardItem[]
+
+  @@unique([creditCardId, monthId])
+  @@map("card_months")
+}
+
+// Compra itemizada de la tarjeta. amount siempre positivo (docs/02); type reusa el enum de
+// QuickEntry (personal|joint) — mismo significado, no hace falta un enum propio.
+model CardItem {
+  id           String         @id @default(uuid())
+  cardMonthId  String         @map("card_month_id")
+  description  String
+  date         DateTime?      @db.Date
+  amount       Decimal        @db.Decimal(14, 2)
+  type         QuickEntryType
+  isAdjustment Boolean        @default(false) @map("is_adjustment")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  cardMonth CardMonth @relation(fields: [cardMonthId], references: [id], onDelete: Cascade)
+
+  @@map("card_items")
 }
