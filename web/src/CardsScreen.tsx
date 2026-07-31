@@ -365,15 +365,23 @@ function ItemForm({
         onChange={(e) => setDate(e.target.value)}
         className="rounded-lg border border-line px-3 py-2 text-sm"
       />
-      <CurrencyInput value={amount} onChange={setAmount} className="rounded-lg border border-line px-3 py-2 text-sm" />
+      <CurrencyInput
+        value={amount}
+        onChange={setAmount}
+        allowNegative
+        className="rounded-lg border border-line px-3 py-2 text-sm"
+      />
       <select value={type} onChange={(e) => setType(e.target.value as CardItemType)} className="rounded-lg border border-line px-3 py-2 text-sm">
         <option value="personal">Personal</option>
         <option value="joint">Conjunto</option>
       </select>
+      <p className="col-span-2 -mt-1 text-xs text-ink-muted sm:col-span-4">
+        Usa un monto negativo para devoluciones, cancelaciones o ajustes que restan.
+      </p>
       <div className="col-span-2 flex gap-2 sm:col-span-4">
         <button
           type="button"
-          disabled={!description.trim() || !amount}
+          disabled={!description.trim() || !amount || Number.isNaN(Number(amount)) || Number(amount) === 0}
           onClick={() => onSave({ description, amount, type, date: date || undefined, isAdjustment })}
           className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
         >

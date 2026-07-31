@@ -12,6 +12,8 @@ type CurrencyInputProps = {
   className?: string;
   /** 'large' = display tipo calculadora, centrado y grande (pantalla de registro rapido). */
   variant?: 'default' | 'large';
+  /** Permite un "-" inicial (ej. items de tarjeta que admiten devoluciones/cancelaciones). */
+  allowNegative?: boolean;
 };
 
 export function CurrencyInput({
@@ -22,6 +24,7 @@ export function CurrencyInput({
   placeholder = '0',
   className = '',
   variant = 'default',
+  allowNegative = false,
 }: CurrencyInputProps) {
   const [display, setDisplay] = useState(() => formatAmountDisplay(value));
   const isLarge = variant === 'large';
@@ -31,7 +34,7 @@ export function CurrencyInput({
   }, [value]);
 
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
-    const sanitized = sanitizeAmountInput(e.target.value);
+    const sanitized = sanitizeAmountInput(e.target.value, allowNegative);
     setDisplay(formatAmountDisplay(sanitized));
     onChange(sanitized);
   }

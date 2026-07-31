@@ -16,7 +16,7 @@ export type NuRawRow = {
 export type ParsedCardItemRow = {
   date: string; // YYYY-MM-DD
   description: string;
-  amount: string; // string decimal, siempre positivo (docs/02-modelo-de-datos.md)
+  amount: string; // string decimal, con el signo tal cual viene del archivo (permite creditos/devoluciones)
 };
 
 /** Lee el extracto Nu (buffer .xlsx o .csv — SheetJS detecta el formato) de la primera hoja. */
@@ -32,15 +32,14 @@ export function readNuWorkbook(buffer: Buffer): NuRawRow[] {
  * Normaliza una fila cruda del extracto Nu (Fecha, Descripción, Valor) al formato interno.
  * Formato de columnas asumido — Nu no publica un layout de export oficial (a diferencia de
  * Bancolombia); ajustar cuando se tenga un archivo real (decision confirmada del ticket #3).
- * El monto siempre se guarda positivo (docs/02), sin importar el signo del archivo.
+ * El monto conserva el signo del archivo: los items de tarjeta admiten montos negativos para
+ * devoluciones, cancelaciones o ajustes que restan (ver ticket #3).
  */
 export function normalizeNuRow(row: NuRawRow): ParsedCardItemRow {
-  const rawAmount = parseStatementAmount(row.Valor);
-  const amount = rawAmount.startsWith('-') ? rawAmount.slice(1) : rawAmount;
   return {
     date: parseStatementDate(row.Fecha),
     description: String(row['Descripción'] ?? '').trim(),
-    amount,
+    amount: parseStatementAmount(row.Valor),
   };
 }
 

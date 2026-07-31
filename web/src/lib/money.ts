@@ -26,43 +26,61 @@ export function formatCOP(amount: string): string {
  * siempre deja exactamente 3 digitos en el grupo que le sigue (asi agrupa Intl.NumberFormat);
  * un separador decimal real, al tener maximo 2 decimales, nunca deja 3 o mas. Con eso se
  * distinguen sin ambiguedad.
+ *
+ * `allowNegative` habilita un "-" inicial (ej. items de tarjeta que admiten devoluciones/
+ * cancelaciones, ver ticket #3) — por defecto false, igual que el comportamiento previo, para no
+ * afectar los demas usos de CurrencyInput (ingresos, registro rapido) donde el monto siempre es
+ * positivo y el signo lo aplica el backend.
  */
-export function sanitizeAmountInput(raw: string): string {
+export function sanitizeAmountInput(raw: string, allowNegative = false): string {
+  const isNegative = allowNegative && raw.trimStart().startsWith('-');
   const cleaned = raw.replace(/[^\d.,]/g, '');
 
+  let result: string;
   const commaIndex = cleaned.lastIndexOf(',');
   if (commaIndex !== -1) {
     const integerDigits = cleaned.slice(0, commaIndex).replace(/[.,]/g, '');
     const decimalDigits = cleaned.slice(commaIndex + 1).replace(/[.,]/g, '').slice(0, 2);
-    return `${integerDigits}.${decimalDigits}`;
+    result = `${integerDigits}.${decimalDigits}`;
+  } else {
+    const dotIndex = cleaned.lastIndexOf('.');
+    if (dotIndex === -1) {
+      result = cleaned;
+    } else {
+      const tail = cleaned.slice(dotIndex + 1).replace(/\./g, '');
+      if (tail.length >= 3) {
+        result = cleaned.replace(/\./g, '');
+      } else {
+        const integerDigits = cleaned.slice(0, dotIndex).replace(/\./g, '');
+        result = `${integerDigits}.${tail}`;
+      }
+    }
   }
 
-  const dotIndex = cleaned.lastIndexOf('.');
-  if (dotIndex === -1) {
-    return cleaned;
-  }
-  const tail = cleaned.slice(dotIndex + 1).replace(/\./g, '');
-  if (tail.length >= 3) {
-    return cleaned.replace(/\./g, '');
-  }
-  const integerDigits = cleaned.slice(0, dotIndex).replace(/\./g, '');
-  return `${integerDigits}.${tail}`;
+  if (!isNegative) return result;
+  return result ? `-${result}` : '-';
 }
 
 /**
  * Formatea un string decimal canonico ("11439100.5") para mostrarlo mientras se escribe: miles
  * agrupados en la parte entera + coma decimal, preservando los decimales tal cual los escribio el
- * usuario (sin forzar a 2 digitos, porque interrumpiria la edicion en curso).
+ * usuario (sin forzar a 2 digitos, porque interrumpiria la edicion en curso). Preserva un "-"
+ * inicial si el valor viene negativo (ver `allowNegative` en sanitizeAmountInput).
  */
 export function formatAmountDisplay(value: string): string {
   if (!value) return '';
-  const [integerPart, decimalPart] = value.split('.');
+  const isNegative = value.startsWith('-');
+  const unsigned = isNegative ? value.slice(1) : value;
+  if (isNegative && !unsigned) return '-';
+
+  const [integerPart, decimalPart] = unsigned.split('.');
   const groupedInteger = integerPart
     ? groupFormatter.format(Number(integerPart))
     : decimalPart !== undefined
       ? '0'
       : '';
-  return decimalPart !== undefined ? `${groupedInteger},${decimalPart}` : groupedInteger;
+  const body = decimalPart !== undefined ? `${groupedInteger},${decimalPart}` : groupedInteger;
+  return isNegative ? `-${body}` : body;
 }
 
 export const MESES = [

@@ -19,9 +19,9 @@ describe('normalizeNuRow', () => {
     expect(row.amount).toBe('45000.00');
   });
 
-  it('el monto siempre queda positivo, incluso si el archivo trae signo negativo', () => {
-    const row = normalizeNuRow({ Fecha: '2026/06/15', Descripción: 'COMPRA', Valor: '-32000' });
-    expect(row.amount).toBe('32000');
+  it('conserva el signo negativo del archivo (devoluciones, cancelaciones o ajustes que restan)', () => {
+    const row = normalizeNuRow({ Fecha: '2026/06/15', Descripción: 'DEVOLUCION COMPRA', Valor: '-32000' });
+    expect(row.amount).toBe('-32000');
   });
 });
 

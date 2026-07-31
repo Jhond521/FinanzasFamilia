@@ -58,6 +58,26 @@ describe('sanitizeAmountInput', () => {
   it('trunca (no reinterpreta como miles) un tercer decimal escrito tras la coma', () => {
     expect(sanitizeAmountInput('11000000,501')).toBe('11000000.50');
   });
+
+  it('sin allowNegative, descarta el "-" inicial (comportamiento por defecto sin cambios)', () => {
+    expect(sanitizeAmountInput('-32000')).toBe('32000');
+  });
+
+  it('con allowNegative, conserva el "-" inicial', () => {
+    expect(sanitizeAmountInput('-32000', true)).toBe('-32000');
+  });
+
+  it('con allowNegative, conserva el "-" solo mientras el usuario sigue escribiendo (sin digitos aun)', () => {
+    expect(sanitizeAmountInput('-', true)).toBe('-');
+  });
+
+  it('con allowNegative, tambien acepta decimales negativos', () => {
+    expect(sanitizeAmountInput('-32000,50', true)).toBe('-32000.50');
+  });
+
+  it('con allowNegative, un "-" no inicial (embebido) no cuenta como signo', () => {
+    expect(sanitizeAmountInput('32-000', true)).toBe('32000');
+  });
 });
 
 describe('formatAmountDisplay', () => {
@@ -75,5 +95,13 @@ describe('formatAmountDisplay', () => {
 
   it('conserva la coma decimal final mientras el usuario sigue escribiendo', () => {
     expect(formatAmountDisplay('1234.')).toBe('1.234,');
+  });
+
+  it('agrupa la parte entera preservando el signo negativo', () => {
+    expect(formatAmountDisplay('-32000')).toBe('-32.000');
+  });
+
+  it('muestra un "-" solo mientras el usuario sigue escribiendo el numero', () => {
+    expect(formatAmountDisplay('-')).toBe('-');
   });
 });

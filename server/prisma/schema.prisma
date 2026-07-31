@@ -359,8 +359,10 @@ model CardMonth {
   @@map("card_months")
 }
 
-// Compra itemizada de la tarjeta. amount siempre positivo (docs/02); type reusa el enum de
-// QuickEntry (personal|joint) — mismo significado, no hace falta un enum propio.
+// Compra itemizada de la tarjeta. amount admite negativos (devoluciones, cancelaciones o
+// ajustes que restan — docs/02 originalmente lo documentaba siempre positivo, ajustado a
+// pedido del producto); type reusa el enum de QuickEntry (personal|joint) — mismo
+// significado, no hace falta un enum propio.
 model CardItem {
   id           String         @id @default(uuid())
   cardMonthId  String         @map("card_month_id")

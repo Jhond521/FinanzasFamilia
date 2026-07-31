@@ -17,12 +17,20 @@ const CARD_ITEM_TYPES = ['personal', 'joint'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateSchema = z.string().regex(DATE_RE, 'Fecha debe ser YYYY-MM-DD');
 
-const updateCardMonthSchema = z.object({ amountPaid: z.union([z.string(), z.number()]) });
+// Acepta signo negativo (devoluciones/cancelaciones/ajustes que restan, ver ticket #3) — a
+// diferencia de docs/02-modelo-de-datos.md (que documentaba el monto siempre positivo), el
+// producto ahora permite items negativos para reflejar creditos reales del extracto de la
+// tarjeta. Se valida que sea un numero finito parseable (nunca "-" solo, vacio, etc.).
+const amountSchema = z
+  .union([z.string(), z.number()])
+  .refine((value) => Number.isFinite(Number(value)), { message: 'Monto invalido' });
+
+const updateCardMonthSchema = z.object({ amountPaid: amountSchema });
 
 const createCardItemSchema = z.object({
   description: z.string().trim().min(1),
   date: dateSchema.optional(),
-  amount: z.union([z.string(), z.number()]),
+  amount: amountSchema,
   type: z.enum(CARD_ITEM_TYPES),
   isAdjustment: z.boolean().optional().default(false),
 });
@@ -30,7 +38,7 @@ const createCardItemSchema = z.object({
 const updateCardItemSchema = z.object({
   description: z.string().trim().min(1).optional(),
   date: dateSchema.nullable().optional(),
-  amount: z.union([z.string(), z.number()]).optional(),
+  amount: amountSchema.optional(),
   type: z.enum(CARD_ITEM_TYPES).optional(),
   isAdjustment: z.boolean().optional(),
 });
@@ -89,7 +97,7 @@ cardMonthsRouter.post('/:id/items', async (req, res) => {
       cardMonthId: cardMonth.id,
       description: data.description,
       date: data.date ? new Date(`${data.date}T00:00:00.000Z`) : null,
-      amount: new Decimal(data.amount).abs(),
+      amount: new Decimal(data.amount),
       type: data.type,
       isAdjustment: data.isAdjustment,
     },
@@ -115,7 +123,7 @@ cardItemsRouter.put('/:id', async (req, res) => {
     data: {
       description: data.description ?? existing.description,
       date: data.date !== undefined ? (data.date ? new Date(`${data.date}T00:00:00.000Z`) : null) : existing.date,
-      amount: data.amount !== undefined ? new Decimal(data.amount).abs() : existing.amount,
+      amount: data.amount !== undefined ? new Decimal(data.amount) : existing.amount,
       type: data.type ?? existing.type,
       isAdjustment: data.isAdjustment ?? existing.isAdjustment,
     },
