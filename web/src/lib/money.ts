@@ -13,23 +13,36 @@ export function formatCOP(amount: string): string {
 }
 
 /**
- * Extrae los pesos enteros de un string decimal ("11439100.00" -> "11439100").
- * Los ingresos de esta app nunca tienen centavos reales (ver formatCOP, que igual siempre
- * muestra ",00"), asi que se descarta la parte decimal en vez de arrastrarla como mas digitos.
+ * Normaliza lo que el usuario escribio o pego a un string decimal canonico: punto como separador
+ * decimal (igual que el resto de la API/Decimal), maximo 2 decimales, sin separadores de miles.
+ * Acepta tanto "," como "." como separador decimal (el ultimo que aparezca en el texto se toma
+ * como tal; cualquier otro se interpreta como separador de miles y se descarta).
  */
-export function toIntegerDigits(value: string): string {
-  const [integerPart] = value.split('.');
-  return integerPart.replace(/\D/g, '');
+export function sanitizeAmountInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d.,]/g, '');
+  const lastSeparator = Math.max(cleaned.lastIndexOf(','), cleaned.lastIndexOf('.'));
+  if (lastSeparator === -1) {
+    return cleaned;
+  }
+  const integerDigits = cleaned.slice(0, lastSeparator).replace(/[.,]/g, '');
+  const decimalDigits = cleaned.slice(lastSeparator + 1).replace(/[.,]/g, '').slice(0, 2);
+  return `${integerDigits}.${decimalDigits}`;
 }
 
 /**
- * Formatea digitos enteros con separador de miles, mientras se escribe. Los dos decimales se
- * muestran aparte como sufijo fijo (ver CurrencyInput) — no van en el valor editable, porque el
- * cursor terminaria cayendo despues de la coma y los digitos escritos ahi se perderian.
+ * Formatea un string decimal canonico ("11439100.5") para mostrarlo mientras se escribe: miles
+ * agrupados en la parte entera + coma decimal, preservando los decimales tal cual los escribio el
+ * usuario (sin forzar a 2 digitos, porque interrumpiria la edicion en curso).
  */
-export function formatThousands(digits: string): string {
-  if (!digits) return '';
-  return groupFormatter.format(Number(digits));
+export function formatAmountDisplay(value: string): string {
+  if (!value) return '';
+  const [integerPart, decimalPart] = value.split('.');
+  const groupedInteger = integerPart
+    ? groupFormatter.format(Number(integerPart))
+    : decimalPart !== undefined
+      ? '0'
+      : '';
+  return decimalPart !== undefined ? `${groupedInteger},${decimalPart}` : groupedInteger;
 }
 
 export const MESES = [

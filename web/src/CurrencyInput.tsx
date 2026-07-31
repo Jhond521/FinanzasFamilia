@@ -1,8 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
-import { formatThousands, toIntegerDigits } from './lib/money';
+import { formatAmountDisplay, sanitizeAmountInput } from './lib/money';
 
 type CurrencyInputProps = {
-  /** Monto en pesos enteros como string decimal (lo que viaja hacia/desde la API), ej. "11439100" o "". */
+  /** Monto como string decimal (lo que viaja hacia/desde la API), ej. "11439100.5" o "". */
   value: string;
   onChange: (rawValue: string) => void;
   disabled?: boolean;
@@ -20,23 +20,23 @@ export function CurrencyInput({
   className = '',
   variant = 'default',
 }: CurrencyInputProps) {
-  const [display, setDisplay] = useState(() => formatThousands(toIntegerDigits(value)));
+  const [display, setDisplay] = useState(() => formatAmountDisplay(value));
   const isLarge = variant === 'large';
 
   useEffect(() => {
-    setDisplay(formatThousands(toIntegerDigits(value)));
+    setDisplay(formatAmountDisplay(value));
   }, [value]);
 
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
-    const digits = e.target.value.replace(/\D/g, '');
-    setDisplay(formatThousands(digits));
-    onChange(digits);
+    const sanitized = sanitizeAmountInput(e.target.value);
+    setDisplay(formatAmountDisplay(sanitized));
+    onChange(sanitized);
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${isLarge ? 'border-b-2 border-brand' : ''}`}>
       <span
-        className={`pointer-events-none absolute inset-y-0 flex items-center text-slate-400 ${
+        className={`pointer-events-none absolute inset-y-0 flex items-center text-ink-muted ${
           isLarge ? 'left-4 text-2xl font-bold' : 'left-3'
         }`}
       >
@@ -44,26 +44,17 @@ export function CurrencyInput({
       </span>
       <input
         type="text"
-        inputMode="numeric"
+        inputMode="decimal"
         className={
           isLarge
-            ? `w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-14 text-center text-5xl font-extrabold tracking-tight text-slate-800 focus:outline-none ${className}`
-            : `rounded-lg border border-slate-300 py-2 pl-6 pr-10 text-right ${className}`
+            ? `w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-4 text-center text-5xl font-extrabold tracking-tight text-ink focus:outline-none ${className}`
+            : `rounded-lg border border-line py-2 pl-6 pr-3 text-right text-ink focus:border-brand focus:outline-none ${className}`
         }
         value={display}
         onChange={handleChange}
         disabled={disabled}
         placeholder={placeholder}
       />
-      {/* los centavos nunca se editan aqui (ver toIntegerDigits) — se muestran fijos para que
-          el monto se lea con el mismo formato de dos decimales que el resto de la app */}
-      <span
-        className={`pointer-events-none absolute inset-y-0 flex items-center text-slate-400 ${
-          isLarge ? 'right-4 text-lg font-semibold' : 'right-3'
-        }`}
-      >
-        ,00
-      </span>
     </div>
   );
 }
