@@ -57,4 +57,14 @@ describe('personalSpent', () => {
   it('persona sin registros da cero', () => {
     expect(personalSpent([personal('john', '-100')], 'lina').toString()).toBe('0');
   });
+
+  it('un abono/interes positivo tipo personal resta del gastado (docs/02-modelo-de-datos.md)', () => {
+    // 100 de gasto real, pero llega un abono de 30 (ej. reembolso) -> el gastado neto es 70.
+    expect(personalSpent([personal('john', '-100'), personal('john', '30')], 'john').toString()).toBe('70');
+  });
+
+  it('acepta entradas sin status (transactions de Fase 3), siempre cuentan', () => {
+    const entry: SpendingEntry = { userId: 'john', amount: '-100', type: 'personal' };
+    expect(personalSpent([entry], 'john').toString()).toBe('100');
+  });
 });
