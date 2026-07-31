@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { parseStatementAmount, parseStatementDate } from './statementParsing';
 
 export type BancolombiaRawRow = {
   Fecha: string | number | Date;
@@ -30,49 +31,11 @@ export function readBancolombiaWorkbook(buffer: Buffer): BancolombiaRawRow[] {
  */
 export function normalizeBancolombiaRow(row: BancolombiaRawRow): ParsedTransactionRow {
   return {
-    date: normalizeDate(row.Fecha),
+    date: parseStatementDate(row.Fecha),
     bankDescription: String(row['Descripción'] ?? '').trim(),
     bankReference: row.Referencia ? String(row.Referencia).trim() : null,
-    amount: normalizeAmount(row.Valor),
+    amount: parseStatementAmount(row.Valor),
   };
-}
-
-function normalizeDate(value: string | number | Date): string {
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  const str = String(value).trim();
-
-  // Año primero: "2026/06/01" o "2026-6-1".
-  const yearFirst = str.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
-  if (yearFirst) {
-    const [, year, month, day] = yearFirst;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  // Mes primero: "7/31/26" o "07/31/2026" (MM/DD/AA(AA), formato real de Bancolombia).
-  const monthFirst = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
-  if (monthFirst) {
-    const [, month, day, yearRaw] = monthFirst;
-    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-
-  throw new Error(`Fecha invalida en el extracto: "${str}"`);
-}
-
-function normalizeAmount(value: string | number): string {
-  if (typeof value === 'number') {
-    return value.toFixed(2);
-  }
-  // Se asume "," como separador de miles y "." como decimal (formato tipico de export de banco);
-  // ajustar aqui si los archivos reales de junio usan otra convencion (ver criterio de aceptacion
-  // del ticket #2 sobre probar contra los archivos reales).
-  const cleaned = value.replace(/\$/g, '').replace(/\s/g, '').replace(/,/g, '').trim();
-  if (cleaned === '' || Number.isNaN(Number(cleaned))) {
-    throw new Error(`Monto invalido en el extracto: "${value}"`);
-  }
-  return cleaned;
 }
 
 /** Atajo: lee el buffer y normaliza todas las filas en un solo paso. */
