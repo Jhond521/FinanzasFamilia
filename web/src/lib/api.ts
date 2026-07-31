@@ -3,9 +3,10 @@ export function buildApiUrl(path: string): string {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(buildApiUrl(path), {
     credentials: 'include',
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: init?.body && !isFormData ? { 'Content-Type': 'application/json' } : undefined,
     ...init,
   });
   if (!response.ok) {
@@ -154,4 +155,227 @@ export async function updateQuickEntry(
 
 export async function deleteQuickEntry(id: string): Promise<void> {
   await apiFetch<void>(`/quick-entries/${id}`, { method: 'DELETE' });
+}
+
+export async function markQuickEntryNoMatchExpected(id: string, noMatchExpected: boolean): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>(`/quick-entries/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: noMatchExpected ? 'no_match_expected' : 'pending' }),
+  });
+  return body.quickEntry;
+}
+
+// ---- Fase 3: categorias, reglas, importacion y transacciones ----
+
+export type Category = { id: string; name: string; active: boolean; sortOrder: number };
+
+export async function fetchCategories(): Promise<Category[]> {
+  const body = await apiFetch<{ categories: Category[] }>('/categories');
+  return body.categories;
+}
+
+export type RuleSetType = 'personal' | 'joint' | 'movement';
+export type RuleMode = 'auto' | 'suggest';
+export type RuleAmountSign = 'any' | 'positive' | 'negative';
+export type RuleOrigin = 'seed' | 'user' | 'learned';
+
+export type Rule = {
+  id: string;
+  pattern: string;
+  amountSign: RuleAmountSign;
+  setType: RuleSetType;
+  setCategoryId: string | null;
+  setDetail: string | null;
+  mode: RuleMode;
+  active: boolean;
+  hitCount: number;
+  createdFrom: RuleOrigin;
+};
+
+export async function fetchRules(): Promise<Rule[]> {
+  const body = await apiFetch<{ rules: Rule[] }>('/rules');
+  return body.rules;
+}
+
+export type RuleInput = {
+  pattern: string;
+  setType: RuleSetType;
+  setCategoryId?: string | null;
+  setDetail?: string | null;
+  mode: RuleMode;
+  amountSign?: RuleAmountSign;
+};
+
+export async function createRule(input: RuleInput): Promise<Rule> {
+  const body = await apiFetch<{ rule: Rule }>('/rules', { method: 'POST', body: JSON.stringify(input) });
+  return body.rule;
+}
+
+export async function updateRule(id: string, input: Partial<RuleInput & { active: boolean }>): Promise<Rule> {
+  const body = await apiFetch<{ rule: Rule }>(`/rules/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  return body.rule;
+}
+
+export async function deleteRule(id: string): Promise<void> {
+  await apiFetch<void>(`/rules/${id}`, { method: 'DELETE' });
+}
+
+export type RuleSuggestion = {
+  pattern: string;
+  setType: RuleSetType;
+  setCategoryId: string | null;
+  setDetail: string | null;
+  count: number;
+};
+
+export async function fetchRuleSuggestions(monthId: string): Promise<RuleSuggestion[]> {
+  const body = await apiFetch<{ suggestions: RuleSuggestion[] }>(`/rules/suggestions?monthId=${monthId}`);
+  return body.suggestions;
+}
+
+export async function acceptRuleSuggestion(
+  input: RuleSuggestion & { monthId?: string },
+): Promise<{ rule: Rule; reclassified: number }> {
+  return apiFetch(`/rules/suggestions/accept`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export type TransactionType = 'personal' | 'joint' | 'movement' | 'unclassified';
+export type ClassifiedBy = 'rule' | 'match' | 'user' | null;
+
+export type Transaction = {
+  id: string;
+  monthId: string;
+  ownerUserId: string;
+  importBatchId: string;
+  date: string;
+  bankDescription: string;
+  bankReference: string | null;
+  amount: string;
+  type: TransactionType;
+  categoryId: string | null;
+  detail: string | null;
+  classifiedBy: ClassifiedBy;
+  ruleId: string | null;
+  needsReview: boolean;
+  suggestedType: TransactionType | null;
+  suggestedCategoryId: string | null;
+  suggestedDetail: string | null;
+  ruleConflicts: { id: string; setType: RuleSetType; setCategoryId: string | null; setDetail: string | null }[];
+};
+
+export async function fetchTransactions(params: {
+  monthId: string;
+  type?: TransactionType;
+  categoryId?: string;
+  needsReview?: boolean;
+  ownerUserId?: string;
+  q?: string;
+}): Promise<Transaction[]> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  const body = await apiFetch<{ transactions: Transaction[] }>(`/transactions?${query.toString()}`);
+  return body.transactions;
+}
+
+export async function updateTransaction(
+  id: string,
+  input: Partial<{ type: TransactionType; categoryId: string | null; detail: string | null }>,
+): Promise<Transaction> {
+  const body = await apiFetch<{ transaction: Transaction }>(`/transactions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.transaction;
+}
+
+export async function fetchMatchCandidates(transactionId: string): Promise<QuickEntry[]> {
+  const body = await apiFetch<{ candidates: QuickEntry[] }>(`/transactions/${transactionId}/match-candidates`);
+  return body.candidates;
+}
+
+export async function matchTransaction(transactionId: string, quickEntryId: string): Promise<Transaction> {
+  const body = await apiFetch<{ transaction: Transaction }>(`/transactions/${transactionId}/match`, {
+    method: 'POST',
+    body: JSON.stringify({ quickEntryId }),
+  });
+  return body.transaction;
+}
+
+export type ImportBatch = {
+  id: string;
+  monthId: string;
+  ownerUserId: string;
+  filename: string;
+  uploadedBy: string;
+  rowCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  status: 'done' | 'undone';
+  createdAt: string;
+  owner?: User;
+  uploader?: User;
+};
+
+export type ImportResult = {
+  batchId: string;
+  imported: number;
+  duplicatesSkipped: number;
+  autoClassified: number;
+  needsReview: number;
+  matchedQuickEntries: number;
+  rejectedOutOfMonth: number;
+};
+
+export async function uploadImport(file: File, monthId: string, ownerUserId: string): Promise<ImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('monthId', monthId);
+  formData.append('ownerUserId', ownerUserId);
+  return apiFetch<ImportResult>('/imports', { method: 'POST', body: formData });
+}
+
+export async function fetchImportBatches(): Promise<ImportBatch[]> {
+  const body = await apiFetch<{ batches: ImportBatch[] }>('/imports');
+  return body.batches;
+}
+
+export async function undoImportBatch(batchId: string): Promise<void> {
+  await apiFetch<void>(`/imports/${batchId}/undo`, { method: 'POST' });
+}
+
+export type SkippedDuplicate = {
+  id: string;
+  importBatchId: string;
+  dedupeKey: string;
+  date: string;
+  bankDescription: string;
+  bankReference: string | null;
+  amount: string;
+  resolution: 'pending' | 'confirmed_duplicate' | 'forced_twin';
+  forcedTransactionId: string | null;
+};
+
+export type DuplicateGroup = { dedupeKey: string; existing: Transaction[]; skipped: SkippedDuplicate[] };
+
+export async function fetchImportDuplicates(batchId: string): Promise<DuplicateGroup[]> {
+  const body = await apiFetch<{ groups: DuplicateGroup[] }>(`/imports/${batchId}/duplicates`);
+  return body.groups;
+}
+
+export async function confirmSkippedDuplicate(id: string): Promise<void> {
+  await apiFetch<void>(`/skipped-duplicates/${id}/confirm`, { method: 'POST' });
+}
+
+export async function forceSkippedDuplicate(id: string): Promise<void> {
+  await apiFetch<void>(`/skipped-duplicates/${id}/force`, { method: 'POST' });
+}
+
+export async function bulkConfirmSkippedDuplicates(batchId: string): Promise<number> {
+  const body = await apiFetch<{ confirmed: number }>('/skipped-duplicates/bulk-confirm', {
+    method: 'POST',
+    body: JSON.stringify({ batchId }),
+  });
+  return body.confirmed;
 }

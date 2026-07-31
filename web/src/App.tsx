@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { Route, Routes } from 'react-router-dom';
 import { fetchCurrentUser } from './lib/api';
+import ConfigurationScreen from './ConfigurationScreen';
 import Dashboard from './Dashboard';
+import ImportScreen from './ImportScreen';
 import QuickEntry from './QuickEntry';
+import ReviewQueueScreen from './ReviewQueueScreen';
+import TransactionsScreen from './TransactionsScreen';
 import UnauthorizedScreen from './UnauthorizedScreen';
 
 function LoginScreen() {
@@ -41,6 +45,10 @@ export default function App() {
           <>
             <Route path="/" element={<Dashboard />} />
             <Route path="/r" element={<QuickEntry currentUser={user} />} />
+            <Route path="/importar" element={<ImportScreen />} />
+            <Route path="/revisar" element={<ReviewQueueScreen />} />
+            <Route path="/transacciones" element={<TransactionsScreen />} />
+            <Route path="/configuracion" element={<ConfigurationScreen />} />
           </>
         ) : (
           <Route path="*" element={<LoginScreen />} />

@@ -6,11 +6,14 @@ import {
   fetchMonthDetail,
   fetchMonthSummary,
   fetchMonths,
+  fetchQuickEntries,
+  fetchTransactions,
   fetchUsers,
   replaceMonthIncomes,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
 import { formatCOP, MESES } from './lib/money';
+import NavBar from './NavBar';
 
 const BUCKET_KIND_LABEL: Record<string, string> = {
   savings: 'Ahorro',
@@ -45,10 +48,10 @@ export default function Dashboard() {
   const currentMonthExists = months?.some((m) => m.year === now.getFullYear() && m.month === now.getMonth() + 1);
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-ink">Finanzas en Pareja</h1>
-        <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-cream">
+      <NavBar />
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Link
             to="/r"
             className="rounded-lg bg-brand hover:bg-brand-hover px-3 py-2 text-sm font-semibold text-white"
@@ -78,13 +81,13 @@ export default function Dashboard() {
             </button>
           )}
         </div>
-      </header>
 
-      {!selectedMonthId && !loadingMonths && (
-        <p className="text-center text-ink-muted">Todavia no hay meses creados.</p>
-      )}
+        {!selectedMonthId && !loadingMonths && (
+          <p className="text-center text-ink-muted">Todavia no hay meses creados.</p>
+        )}
 
-      {selectedMonthId && users && <MonthPanel monthId={selectedMonthId} users={users} />}
+        {selectedMonthId && users && <MonthPanel monthId={selectedMonthId} users={users} />}
+      </div>
     </div>
   );
 }
@@ -132,8 +135,35 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
 
   const isClosed = detail?.month.status === 'closed';
 
+  const { data: needsReview } = useQuery({
+    queryKey: ['transactions', monthId, { needsReview: true }],
+    queryFn: () => fetchTransactions({ monthId, needsReview: true }),
+  });
+  const { data: pendingQuickEntries } = useQuery({
+    queryKey: ['quickEntries', monthId, 'pending'],
+    queryFn: () => fetchQuickEntries(monthId, 'pending'),
+  });
+
   return (
     <div className="flex flex-col gap-6">
+      {(Boolean(needsReview?.length) || Boolean(pendingQuickEntries?.length)) && (
+        <div className="flex flex-wrap gap-4 text-sm">
+          {Boolean(needsReview?.length) && (
+            <span>
+              <b className="text-danger">{needsReview!.length}</b> sin clasificar →{' '}
+              <Link to="/revisar" className="font-semibold text-brand">
+                revisar
+              </Link>
+            </span>
+          )}
+          {Boolean(pendingQuickEntries?.length) && (
+            <span className="text-ink-muted">
+              <b>{pendingQuickEntries!.length}</b> registros sin match
+            </span>
+          )}
+        </div>
+      )}
+
       <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-medium text-ink-muted">Ingresos del mes</h2>
         <div className="flex flex-col gap-3">
