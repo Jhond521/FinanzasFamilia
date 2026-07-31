@@ -138,38 +138,42 @@ export default function ConfigurationScreen() {
             </div>
           )}
 
-          <div className="grid grid-cols-[1.3fr_90px_130px_100px_70px_70px] gap-2 px-1 pb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
-            <div>Patron</div>
-            <div>Modo</div>
-            <div>Tipo → Categoria</div>
-            <div>Origen</div>
-            <div className="text-right">Hits</div>
-            <div />
-          </div>
-          {rules?.map((rule) => (
-            <div
-              key={rule.id}
-              className={`grid grid-cols-[1.3fr_90px_130px_100px_70px_70px] items-center gap-2 border-t border-line px-1 py-2 text-sm ${
-                rule.active ? '' : 'opacity-40'
-              }`}
-            >
-              <div className="font-semibold text-ink">{rule.pattern}</div>
-              <div className="text-ink-muted">{rule.mode === 'auto' ? 'Auto' : 'Sugerir'}</div>
-              <div className="text-ink-muted">
-                {TYPE_LABEL[rule.setType]} → {categories?.find((c) => c.id === rule.setCategoryId)?.name ?? '—'}
+          <div className="overflow-x-auto">
+            <div className="min-w-[640px]">
+              <div className="grid grid-cols-[1.3fr_80px_130px_90px_50px_150px] gap-2 px-1 pb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
+                <div>Patron</div>
+                <div>Modo</div>
+                <div>Tipo → Categoria</div>
+                <div>Origen</div>
+                <div className="text-right">Hits</div>
+                <div />
               </div>
-              <div className="text-ink-muted">{ORIGIN_LABEL[rule.createdFrom]}</div>
-              <div className="text-right font-bold text-ink">{rule.hitCount}</div>
-              <div className="flex justify-end gap-2 text-xs font-semibold">
-                <button type="button" onClick={() => toggleMutation.mutate(rule)} className="text-ink-muted">
-                  {rule.active ? 'Desactivar' : 'Activar'}
-                </button>
-                <button type="button" onClick={() => deleteMutation.mutate(rule.id)} className="text-danger">
-                  Borrar
-                </button>
-              </div>
+              {rules?.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={`grid grid-cols-[1.3fr_80px_130px_90px_50px_150px] items-center gap-2 border-t border-line px-1 py-2 text-sm ${
+                    rule.active ? '' : 'opacity-40'
+                  }`}
+                >
+                  <div className="font-semibold text-ink">{rule.pattern}</div>
+                  <div className="text-ink-muted">{rule.mode === 'auto' ? 'Auto' : 'Sugerir'}</div>
+                  <div className="text-ink-muted">
+                    {TYPE_LABEL[rule.setType]} → {categories?.find((c) => c.id === rule.setCategoryId)?.name ?? '—'}
+                  </div>
+                  <div className="text-ink-muted">{ORIGIN_LABEL[rule.createdFrom]}</div>
+                  <div className="text-right font-bold text-ink">{rule.hitCount}</div>
+                  <div className="flex justify-end gap-3 whitespace-nowrap text-xs font-semibold">
+                    <button type="button" onClick={() => toggleMutation.mutate(rule)} className="text-ink-muted">
+                      {rule.active ? 'Desactivar' : 'Activar'}
+                    </button>
+                    <button type="button" onClick={() => deleteMutation.mutate(rule.id)} className="text-danger">
+                      Borrar
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </section>
       </div>
     </div>
