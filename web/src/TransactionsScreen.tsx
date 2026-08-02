@@ -25,6 +25,14 @@ const TYPE_LABEL: Record<TransactionType, string> = {
   unclassified: 'Sin clasificar',
 };
 
+// Colores por tipo, igual a typePill() de design_specs/Finanzas en Pareja.dc.html.
+const TYPE_PILL_CLASS: Record<TransactionType, string> = {
+  joint: 'bg-brand-light text-brand',
+  personal: 'bg-cream-surface text-ink-soft',
+  movement: 'bg-warning-light text-warning',
+  unclassified: 'bg-danger-light text-danger',
+};
+
 export default function TransactionsScreen() {
   const queryClient = useQueryClient();
   const { data: months } = useQuery({ queryKey: ['months'], queryFn: fetchMonths });
@@ -144,7 +152,7 @@ export default function TransactionsScreen() {
                     <select
                       value={tx.type}
                       onChange={(e) => updateMutation.mutate({ id: tx.id, type: e.target.value as TransactionType })}
-                      className="rounded border border-line bg-white px-2 py-1 text-xs"
+                      className={`rounded-full border-none px-3 py-1 text-xs font-semibold ${TYPE_PILL_CLASS[tx.type]}`}
                     >
                       {Object.entries(TYPE_LABEL).map(([value, label]) => (
                         <option key={value} value={value}>

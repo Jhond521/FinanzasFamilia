@@ -13,7 +13,9 @@ import {
   fetchTransactions,
   fetchUsers,
   reopenMonth,
+  replaceMonthBuckets,
   replaceMonthIncomes,
+  type MonthDetail,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
 import { formatCOP, MESES } from './lib/money';
@@ -41,15 +43,18 @@ export default function Dashboard() {
     }
   }, [months, selectedMonthId]);
 
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createYear, setCreateYear] = useState(now.getFullYear());
+  const [createMonthNum, setCreateMonthNum] = useState(now.getMonth() + 1);
+
   const createMonthMutation = useMutation({
-    mutationFn: () => createMonth(now.getFullYear(), now.getMonth() + 1),
+    mutationFn: () => createMonth(createYear, createMonthNum),
     onSuccess: async (month) => {
       await queryClient.invalidateQueries({ queryKey: ['months'] });
       setSelectedMonthId(month.id);
+      setShowCreateForm(false);
     },
   });
-
-  const currentMonthExists = months?.some((m) => m.year === now.getFullYear() && m.month === now.getMonth() + 1);
 
   return (
     <div className="min-h-screen bg-cream">
@@ -74,17 +79,55 @@ export default function Dashboard() {
               </option>
             ))}
           </select>
-          {!currentMonthExists && (
+          <button
+            type="button"
+            className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink-soft hover:border-brand hover:text-brand"
+            onClick={() => setShowCreateForm((v) => !v)}
+          >
+            + Crear mes
+          </button>
+        </div>
+
+        {showCreateForm && (
+          <div className="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-white p-4 shadow-sm">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Mes</span>
+              <select
+                className="rounded-lg border border-line px-3 py-2 text-sm"
+                value={createMonthNum}
+                onChange={(e) => setCreateMonthNum(Number(e.target.value))}
+              >
+                {MESES.map((label, i) => (
+                  <option key={label} value={i + 1}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Año</span>
+              <input
+                type="number"
+                className="w-24 rounded-lg border border-line px-3 py-2 text-sm"
+                value={createYear}
+                onChange={(e) => setCreateYear(Number(e.target.value))}
+              />
+            </label>
             <button
               type="button"
-              className="rounded-lg bg-brand hover:bg-brand-hover px-3 py-2 text-sm text-white disabled:opacity-50"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
               onClick={() => createMonthMutation.mutate()}
               disabled={createMonthMutation.isPending}
             >
-              + Crear {MESES[now.getMonth()]}
+              Crear
             </button>
-          )}
-        </div>
+            {createMonthMutation.isError && (
+              <p className="w-full text-sm text-danger">
+                {createMonthMutation.error instanceof Error ? createMonthMutation.error.message : 'No se pudo crear el mes'}
+              </p>
+            )}
+          </div>
+        )}
 
         {!selectedMonthId && !loadingMonths && (
           <p className="text-center text-ink-muted">Todavia no hay meses creados.</p>
@@ -233,6 +276,15 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
         </div>
       </section>
 
+      {detail && (
+        <MonthBucketsPanel
+          monthId={monthId}
+          monthBuckets={detail.monthBuckets}
+          isClosed={isClosed}
+          onSaved={invalidateMonth}
+        />
+      )}
+
       {summary && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-medium text-ink-muted">
@@ -323,6 +375,109 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
         </section>
       )}
     </div>
+  );
+}
+
+type MonthBucketRow = MonthDetail['monthBuckets'][number];
+
+function MonthBucketsPanel({
+  monthId,
+  monthBuckets,
+  isClosed,
+  onSaved,
+}: {
+  monthId: string;
+  monthBuckets: MonthBucketRow[];
+  isClosed: boolean;
+  onSaved: () => Promise<unknown>;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [rows, setRows] = useState<MonthBucketRow[]>(monthBuckets);
+
+  useEffect(() => {
+    setRows(monthBuckets);
+  }, [monthBuckets]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => replaceMonthBuckets(monthId, rows),
+    onSuccess: async () => {
+      await onSaved();
+      setShowForm(false);
+    },
+  });
+
+  const activeSum = rows.filter((b) => b.active).reduce((sum, b) => sum + Number(b.percentage), 0);
+
+  function updateRow(id: string, patch: Partial<MonthBucketRow>) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-ink-muted">Rubros de este mes</h2>
+        <button type="button" onClick={() => setShowForm((v) => !v)} className="text-xs font-semibold text-brand">
+          {showForm ? 'Cerrar' : 'Configurar mes'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="mt-3 flex flex-col gap-2">
+          {isClosed && (
+            <p className="rounded-lg bg-warning-light p-2 text-xs text-warning">
+              El mes esta cerrado — reabrelo para poder editar sus rubros.
+            </p>
+          )}
+          {rows.map((bucket) => (
+            <div
+              key={bucket.id}
+              className={`flex items-center justify-between gap-3 border-t border-line py-2 ${bucket.active ? '' : 'opacity-40'}`}
+            >
+              <span className="text-sm text-ink-soft">{bucket.name}</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={bucket.percentage}
+                    onChange={(e) => updateRow(bucket.id, { percentage: e.target.value })}
+                    disabled={isClosed}
+                    className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm disabled:opacity-50"
+                  />
+                  <span className="text-xs text-ink-muted">%</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={isClosed}
+                  onClick={() => updateRow(bucket.id, { active: !bucket.active })}
+                  className="text-xs font-semibold text-ink-muted hover:text-brand disabled:opacity-50"
+                >
+                  {bucket.active ? 'Desactivar' : 'Activar'}
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="mt-2 flex items-center justify-between">
+            <span className={`text-xs font-bold ${activeSum === 100 ? 'text-success' : 'text-danger'}`}>
+              Suman {activeSum}%
+            </span>
+            <button
+              type="button"
+              disabled={isClosed || activeSum !== 100 || saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              Guardar rubros
+            </button>
+          </div>
+          {saveMutation.isError && (
+            <p className="text-xs text-danger">
+              {saveMutation.error instanceof Error ? saveMutation.error.message : 'No se pudo guardar'}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

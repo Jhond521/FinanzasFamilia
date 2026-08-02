@@ -97,6 +97,63 @@ export async function fetchMonthDetail(monthId: string): Promise<MonthDetail> {
   return apiFetch<MonthDetail>(`/months/${monthId}`);
 }
 
+// ---- Rubros (buckets) — config general (Fase 1, sin cliente hasta el ticket #12) ----
+
+export type Bucket = {
+  id: string;
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active: boolean;
+  sortOrder: number;
+};
+
+export async function fetchBuckets(): Promise<Bucket[]> {
+  const body = await apiFetch<{ buckets: Bucket[] }>('/buckets');
+  return body.buckets;
+}
+
+export type BucketInput = {
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active?: boolean;
+};
+
+export async function createBucket(input: BucketInput): Promise<Bucket> {
+  const body = await apiFetch<{ bucket: Bucket }>('/buckets', { method: 'POST', body: JSON.stringify(input) });
+  return body.bucket;
+}
+
+export async function updateBucket(id: string, input: Partial<BucketInput>): Promise<Bucket> {
+  const body = await apiFetch<{ bucket: Bucket }>(`/buckets/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  return body.bucket;
+}
+
+// ---- Snapshot de rubros del mes (editable mientras el mes este abierto) ----
+
+export type MonthBucketInput = {
+  id?: string;
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active: boolean;
+};
+
+export async function replaceMonthBuckets(
+  monthId: string,
+  buckets: MonthBucketInput[],
+): Promise<MonthDetail['monthBuckets']> {
+  const body = await apiFetch<{ monthBuckets: MonthDetail['monthBuckets'] }>(`/months/${monthId}/buckets`, {
+    method: 'PUT',
+    body: JSON.stringify(buckets),
+  });
+  return body.monthBuckets;
+}
+
 export type MonthCloseInfo = {
   sharedExpensesExcess: string;
   perPerson: { userId: string; realSavings: string; leaveInAccount: string }[];
@@ -379,6 +436,14 @@ export async function uploadImport(file: File, monthId: string, ownerUserId: str
   formData.append('monthId', monthId);
   formData.append('ownerUserId', ownerUserId);
   return apiFetch<ImportResult>('/imports', { method: 'POST', body: formData });
+}
+
+export type ImportPreviewRow = { date: string; bankDescription: string; bankReference: string | null; amount: string };
+
+export async function previewImport(file: File): Promise<{ totalRows: number; rows: ImportPreviewRow[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiFetch('/imports/preview', { method: 'POST', body: formData });
 }
 
 export async function fetchImportBatches(): Promise<ImportBatch[]> {

@@ -44,6 +44,24 @@ importsRouter.get('/', async (_req, res) => {
   res.json({ batches });
 });
 
+/** Preview de filas antes de confirmar el import (RF4) — no escribe nada en BD, solo parsea. */
+importsRouter.post('/preview', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    badRequest(res, 'file_required', 'Falta el archivo .xlsx');
+    return;
+  }
+
+  let parsedRows;
+  try {
+    parsedRows = parseBancolombiaFile(req.file.buffer);
+  } catch (error) {
+    badRequest(res, 'invalid_file', error instanceof Error ? error.message : 'No se pudo leer el archivo');
+    return;
+  }
+
+  res.json({ totalRows: parsedRows.length, rows: parsedRows.slice(0, 10) });
+});
+
 importsRouter.post('/', upload.single('file'), async (req, res) => {
   if (!req.file) {
     badRequest(res, 'file_required', 'Falta el archivo .xlsx');

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   acceptRuleSuggestion,
@@ -227,8 +227,56 @@ function ReviewCard({
 
   const hasConflict = transaction.ruleConflicts.length > 0;
 
+  // Swipe horizontal (izquierda=personal, derecha=conjunto) — RF5. `touch-action: pan-y` deja que
+  // el navegador siga scrolleando la pantalla verticalmente (la cola es una lista, no una sola
+  // tarjeta como en el mock movil) mientras JS captura el gesto horizontal. Un swipe hacia arriba
+  // no es viable aqui sin romper ese scroll vertical nativo, por eso "Movimiento" queda solo con
+  // el boton de abajo (RF5 lo pide, pero no hay forma de tener ambos sin una libreria de gestos).
+  const SWIPE_THRESHOLD = 80;
+  const [dragX, setDragX] = useState(0);
+  const dragState = useRef<{ startX: number; startY: number; horizontal: boolean } | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    dragState.current = { startX: e.clientX, startY: e.clientY, horizontal: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const state = dragState.current;
+    if (!state) return;
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    if (!state.horizontal && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+      state.horizontal = true;
+    }
+    if (state.horizontal) {
+      setDragX(dx);
+    }
+  }
+
+  function endDrag() {
+    const state = dragState.current;
+    dragState.current = null;
+    if (state?.horizontal && Math.abs(dragX) > SWIPE_THRESHOLD) {
+      if (dragX < 0) onClassify('personal', categoryId, detail || null);
+      else onClassify('joint', categoryId, detail || null);
+    }
+    setDragX(0);
+  }
+
   return (
-    <div className="rounded-2xl border border-line bg-white p-5 shadow-sm">
+    <div
+      className="rounded-2xl border border-line bg-white p-5 shadow-sm"
+      style={{
+        touchAction: 'pan-y',
+        transform: dragX ? `translateX(${dragX}px) rotate(${dragX / 30}deg)` : undefined,
+        transition: dragX ? 'none' : 'transform 0.2s',
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
       <div className="mb-1 flex items-start justify-between">
         <span className="text-xs font-semibold text-ink-muted">
           {transaction.date} · {ownerName ?? '—'}

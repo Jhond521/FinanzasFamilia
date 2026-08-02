@@ -1,23 +1,40 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createBucket,
   createRule,
   deleteRule,
+  fetchBuckets,
   fetchCategories,
   fetchRules,
+  updateBucket,
   updateRule,
+  type Bucket,
+  type BucketKind,
   type Rule,
   type RuleMode,
   type RuleSetType,
+  type SplitMode,
 } from './lib/api';
 import NavBar from './NavBar';
 
 const TYPE_LABEL: Record<RuleSetType, string> = { personal: 'Personal', joint: 'Conjunto', movement: 'Movimiento' };
 const ORIGIN_LABEL: Record<Rule['createdFrom'], string> = { seed: 'Semilla', user: 'Manual', learned: 'Aprendida' };
 
+const BUCKET_KIND_LABEL: Record<BucketKind, string> = {
+  savings: 'Ahorro',
+  personal: 'Personal',
+  shared_expenses: 'Gasto conjunto',
+  other: 'Otro',
+};
+const SPLIT_MODE_LABEL: Record<SplitMode, string> = { proportional: 'Proporcional al ingreso', half: 'Mitad y mitad' };
+
 type DraftRule = { pattern: string; setType: RuleSetType; categoryId: string; mode: RuleMode; setDetail: string };
 
 const EMPTY_DRAFT: DraftRule = { pattern: '', setType: 'joint', categoryId: '', mode: 'auto', setDetail: '' };
+
+type DraftBucket = { name: string; percentage: string; splitMode: SplitMode; kind: BucketKind };
+const EMPTY_BUCKET_DRAFT: DraftBucket = { name: '', percentage: '', splitMode: 'proportional', kind: 'other' };
 
 export default function ConfigurationScreen() {
   const queryClient = useQueryClient();
@@ -64,9 +81,12 @@ export default function ConfigurationScreen() {
         <div>
           <h1 className="text-xl font-extrabold text-ink">Configuración</h1>
           <p className="text-xs text-ink-muted">
-            Rubros e ingresos se editan desde el Dashboard. Aqui solo se administran las reglas de clasificacion.
+            Plantilla de rubros para meses nuevos y reglas de clasificacion. Para ajustar los rubros de
+            un mes en particular (ej. Julio) usa &quot;Configurar mes&quot; desde el Dashboard.
           </p>
         </div>
+
+        <BucketsSection />
 
         <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
@@ -180,6 +200,157 @@ export default function ConfigurationScreen() {
             </div>
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function BucketsSection() {
+  const queryClient = useQueryClient();
+  const { data: buckets } = useQuery({ queryKey: ['buckets'], queryFn: fetchBuckets });
+
+  const [showForm, setShowForm] = useState(false);
+  const [draft, setDraft] = useState<DraftBucket>(EMPTY_BUCKET_DRAFT);
+
+  async function invalidate() {
+    await queryClient.invalidateQueries({ queryKey: ['buckets'] });
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => createBucket(draft),
+    onSuccess: async () => {
+      await invalidate();
+      setDraft(EMPTY_BUCKET_DRAFT);
+      setShowForm(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Partial<Bucket> }) => updateBucket(id, input),
+    onSuccess: invalidate,
+  });
+
+  const activeSum = (buckets ?? []).filter((b) => b.active).reduce((sum, b) => sum + Number(b.percentage), 0);
+
+  return (
+    <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
+      <div className="mb-1 flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-ink">Rubros — configuracion general</h2>
+          <p className="text-xs text-ink-muted">Plantilla que se copia al crear cada mes nuevo</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-bold ${
+              activeSum === 100 ? 'bg-success-light text-success' : 'bg-danger-light text-danger'
+            }`}
+          >
+            Suman {activeSum}%
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowForm((v) => !v)}
+            className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand-hover"
+          >
+            + Rubro
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="mb-4 mt-3 grid grid-cols-2 gap-3 rounded-xl border border-line p-4 sm:grid-cols-4">
+          <input
+            type="text"
+            placeholder="Nombre"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm sm:col-span-1"
+          />
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="%"
+            value={draft.percentage}
+            onChange={(e) => setDraft({ ...draft, percentage: e.target.value })}
+            className="rounded-lg border border-line px-3 py-2 text-sm"
+          />
+          <select
+            value={draft.splitMode}
+            onChange={(e) => setDraft({ ...draft, splitMode: e.target.value as SplitMode })}
+            className="rounded-lg border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(SPLIT_MODE_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={draft.kind}
+            onChange={(e) => setDraft({ ...draft, kind: e.target.value as BucketKind })}
+            className="rounded-lg border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(BUCKET_KIND_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!draft.name.trim() || !draft.percentage || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+            className="col-span-2 rounded-lg bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50 sm:col-span-1"
+          >
+            Guardar
+          </button>
+          {createMutation.isError && (
+            <p className="col-span-2 text-xs text-danger sm:col-span-4">
+              {createMutation.error instanceof Error ? createMutation.error.message : 'No se pudo crear el rubro'}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-col">
+        {buckets?.map((bucket) => (
+          <BucketRow key={bucket.id} bucket={bucket} onUpdate={(input) => updateMutation.mutate({ id: bucket.id, input })} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BucketRow({ bucket, onUpdate }: { bucket: Bucket; onUpdate: (input: Partial<Bucket>) => void }) {
+  const [percentage, setPercentage] = useState(bucket.percentage);
+
+  return (
+    <div className={`flex items-center justify-between gap-3 border-t border-line py-3 ${bucket.active ? '' : 'opacity-40'}`}>
+      <div>
+        <div className="text-sm font-semibold text-ink">{bucket.name}</div>
+        <div className="text-xs text-ink-muted">
+          {SPLIT_MODE_LABEL[bucket.splitMode]} · {BUCKET_KIND_LABEL[bucket.kind]}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={percentage}
+            onChange={(e) => setPercentage(e.target.value)}
+            onBlur={() => percentage !== bucket.percentage && onUpdate({ percentage })}
+            className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm"
+          />
+          <span className="text-sm text-ink-muted">%</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onUpdate({ active: !bucket.active })}
+          className="text-xs font-semibold text-ink-muted hover:text-brand"
+        >
+          {bucket.active ? 'Desactivar' : 'Activar'}
+        </button>
       </div>
     </div>
   );

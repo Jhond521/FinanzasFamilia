@@ -8,8 +8,10 @@ import {
   fetchMonths,
   fetchUsers,
   forceSkippedDuplicate,
+  previewImport,
   undoImportBatch,
   uploadImport,
+  type ImportPreviewRow,
   type ImportResult,
 } from './lib/api';
 import { formatCOP, MESES } from './lib/money';
@@ -27,15 +29,26 @@ export default function ImportScreen() {
 
   const [ownerUserId, setOwnerUserId] = useState<string | undefined>(undefined);
   const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<{ totalRows: number; rows: ImportPreviewRow[] } | null>(null);
   const [lastResult, setLastResult] = useState<ImportResult | null>(null);
   const [reviewingBatchId, setReviewingBatchId] = useState<string | null>(null);
 
+  const previewMutation = useMutation({
+    mutationFn: (selected: File) => previewImport(selected),
+    onSuccess: setPreview,
+    onError: () => setPreview(null),
+  });
+
   function handleFileChange(selected: File | null) {
     setFile(selected);
-    if (selected && users && !ownerUserId) {
-      const lower = selected.name.toLowerCase();
-      const suggested = users.find((u) => lower.includes(u.name.toLowerCase()));
-      if (suggested) setOwnerUserId(suggested.id);
+    setPreview(null);
+    if (selected) {
+      previewMutation.mutate(selected);
+      if (users && !ownerUserId) {
+        const lower = selected.name.toLowerCase();
+        const suggested = users.find((u) => lower.includes(u.name.toLowerCase()));
+        if (suggested) setOwnerUserId(suggested.id);
+      }
     }
   }
 
@@ -47,6 +60,7 @@ export default function ImportScreen() {
     onSuccess: async (result) => {
       setLastResult(result);
       setFile(null);
+      setPreview(null);
       if (result.duplicatesSkipped > 0) setReviewingBatchId(result.batchId);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['imports'] }),
@@ -127,6 +141,33 @@ export default function ImportScreen() {
               />
             </label>
 
+            {previewMutation.isPending && <p className="mb-3 text-xs text-ink-muted">Leyendo archivo…</p>}
+
+            {preview && (
+              <div className="mb-4 overflow-hidden rounded-lg border border-line">
+                <div className="mb-0 px-3 pt-2 text-xs font-bold text-ink-muted">
+                  Preview ({Math.min(preview.rows.length, preview.totalRows)} de {preview.totalRows} filas)
+                </div>
+                <div className="grid grid-cols-[80px_1fr_90px] bg-cream px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+                  <div>Fecha</div>
+                  <div>Descripción</div>
+                  <div className="text-right">Valor</div>
+                </div>
+                {preview.rows.map((row, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-[80px_1fr_90px] items-center border-t border-line px-3 py-2 text-xs"
+                  >
+                    <div className="text-ink-muted">{row.date}</div>
+                    <div className="truncate text-ink">{row.bankDescription}</div>
+                    <div className={`text-right font-semibold ${Number(row.amount) < 0 ? 'text-danger' : 'text-success'}`}>
+                      {formatCOP(row.amount)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {importMutation.isError && (
               <p className="mb-3 text-sm text-danger">
                 {importMutation.error instanceof Error ? importMutation.error.message : 'No se pudo importar'}
@@ -190,16 +231,27 @@ export default function ImportScreen() {
                           {batch.status === 'undone' && <span className="ml-2 text-danger">(deshecho)</span>}
                         </div>
                       </div>
-                      {batch.status === 'done' && (
-                        <button
-                          type="button"
-                          onClick={() => undoMutation.mutate(batch.id)}
-                          disabled={undoMutation.isPending}
-                          className="text-xs font-bold text-danger disabled:opacity-50"
-                        >
-                          Deshacer
-                        </button>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {batch.duplicateCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setReviewingBatchId(batch.id)}
+                            className="text-xs font-bold text-brand"
+                          >
+                            Revisar duplicados
+                          </button>
+                        )}
+                        {batch.status === 'done' && (
+                          <button
+                            type="button"
+                            onClick={() => undoMutation.mutate(batch.id)}
+                            disabled={undoMutation.isPending}
+                            className="text-xs font-bold text-danger disabled:opacity-50"
+                          >
+                            Deshacer
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
