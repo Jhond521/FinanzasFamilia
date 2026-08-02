@@ -79,6 +79,14 @@ export default function TransactionsScreen() {
           </select>
         </div>
 
+        {months && months.length === 0 && (
+          <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
+            Todavia no hay meses creados — crea uno desde el Dashboard.
+          </p>
+        )}
+
+        {Boolean(months?.length) && (
+        <>
         <div className="flex flex-wrap items-center gap-2">
           {TYPE_FILTERS.map((f) => (
             <button
@@ -172,6 +180,8 @@ export default function TransactionsScreen() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

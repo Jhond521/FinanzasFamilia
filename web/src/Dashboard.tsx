@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   closeMonth,
   createMonth,
+  downloadMonthExport,
   fetchMonthComparison,
   fetchMonthDetail,
   fetchMonthSummary,
@@ -158,6 +159,13 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
     onSuccess: invalidateMonth,
   });
 
+  const exportMutation = useMutation({
+    mutationFn: () => {
+      const m = detail!.month;
+      return downloadMonthExport(monthId, `finanzas-${m.year}-${String(m.month).padStart(2, '0')}.xlsx`);
+    },
+  });
+
   const { data: needsReview } = useQuery({
     queryKey: ['transactions', monthId, { needsReview: true }],
     queryFn: () => fetchTransactions({ monthId, needsReview: true }),
@@ -169,6 +177,19 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
 
   return (
     <div className="flex flex-col gap-6">
+      {detail && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => exportMutation.mutate()}
+            disabled={exportMutation.isPending}
+            className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-semibold text-ink-soft hover:border-brand hover:text-brand disabled:opacity-50"
+          >
+            {exportMutation.isPending ? 'Exportando…' : 'Exportar a Excel'}
+          </button>
+        </div>
+      )}
+
       {(Boolean(needsReview?.length) || Boolean(pendingQuickEntries?.length)) && (
         <div className="flex flex-wrap gap-4 text-sm">
           {Boolean(needsReview?.length) && (

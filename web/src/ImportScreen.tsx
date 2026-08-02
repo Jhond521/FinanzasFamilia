@@ -73,6 +73,12 @@ export default function ImportScreen() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4">
         <h1 className="text-xl font-extrabold text-ink">Importar extracto</h1>
 
+        {months && months.length === 0 && (
+          <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
+            Todavia no hay meses creados — crea uno desde el Dashboard antes de importar un extracto.
+          </p>
+        )}
+
         <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-2xl border border-line bg-white p-6 shadow-sm">
             <h2 className="mb-4 font-bold text-ink">Subir extracto Bancolombia</h2>

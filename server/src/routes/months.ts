@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { Prisma, type Bucket, type Month } from '@prisma/client';
 import { z } from 'zod';
+import * as XLSX from 'xlsx';
 import { prisma } from '../lib/prisma';
+import { toDateOnly } from '../lib/dates';
 import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
 import { jointSpent, personalSpent } from '../services/spending';
 import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '../services/summary';
+import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
 
@@ -13,6 +16,18 @@ type Decimal = InstanceType<typeof Prisma.Decimal>;
 
 const SPLIT_MODES = ['proportional', 'half'] as const;
 const BUCKET_KINDS = ['savings', 'personal', 'shared_expenses', 'other'] as const;
+
+const EXPORT_TYPE_LABEL: Record<string, string> = {
+  personal: 'Personal',
+  joint: 'Conjunto',
+  movement: 'Movimiento',
+  unclassified: 'Sin clasificar',
+};
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+] as const;
 
 const createMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),
@@ -406,4 +421,62 @@ monthsRouter.post('/:id/reopen', async (req, res) => {
     data: { status: 'open', closedAt: null },
   });
   res.json({ month: reopened });
+});
+
+monthsRouter.get('/:id/export', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+
+  type SummaryData = Awaited<ReturnType<typeof buildLiveSummary>>;
+  let summary: SummaryData;
+  if (month.status === 'closed') {
+    const frozen = await prisma.monthSummary.findUnique({ where: { monthId: month.id } });
+    summary = frozen ? (frozen.data as unknown as SummaryData) : await buildLiveSummary(month);
+  } else {
+    summary = await buildLiveSummary(month);
+  }
+
+  const [users, transactions] = await Promise.all([
+    prisma.user.findMany(),
+    prisma.transaction.findMany({
+      where: { monthId: month.id },
+      include: { owner: true, category: true },
+      orderBy: { date: 'asc' },
+    }),
+  ]);
+  const userName = (userId: string) => users.find((u) => u.id === userId)?.name ?? userId;
+
+  const workbook = buildMonthExportWorkbook({
+    monthLabel: `${MESES[month.month - 1]} ${month.year}`,
+    totalIncome: summary.totalIncome,
+    buckets: summary.buckets.map((bucket) => ({
+      name: bucket.name,
+      percentage: bucket.percentage,
+      budget: bucket.budget,
+      spent: bucket.spent,
+      available: bucket.available,
+      contributions: bucket.contributions.map((c) => ({ userName: userName(c.userId), amount: c.amount })),
+    })),
+    sharedExpensesExcess: summary.close.sharedExpensesExcess,
+    perPersonClose: summary.close.perPerson.map((p) => ({
+      userName: userName(p.userId),
+      realSavings: p.realSavings,
+      leaveInAccount: p.leaveInAccount,
+    })),
+    transactions: transactions.map((tx) => ({
+      date: toDateOnly(tx.date),
+      ownerName: tx.owner.name,
+      bankDescription: tx.bankDescription,
+      detail: tx.detail,
+      typeLabel: EXPORT_TYPE_LABEL[tx.type] ?? tx.type,
+      categoryName: tx.category?.name ?? null,
+      amount: tx.amount.toString(),
+    })),
+  });
+
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const filename = `finanzas-${month.year}-${String(month.month).padStart(2, '0')}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
 });

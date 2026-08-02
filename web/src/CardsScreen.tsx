@@ -120,6 +120,18 @@ export default function CardsScreen() {
         </div>
         <p className="text-xs text-ink-muted">Módulo independiente — no afecta las bolsas del mes.</p>
 
+        {months && months.length === 0 && (
+          <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
+            Todavia no hay meses creados — crea uno desde el Dashboard.
+          </p>
+        )}
+
+        {months && months.length > 0 && cards && cards.length === 0 && (
+          <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
+            Todavia no hay tarjetas configuradas.
+          </p>
+        )}
+
         {detail && (
           <div className="grid gap-5 lg:grid-cols-2">
             <section className="rounded-2xl border border-line bg-white p-6 shadow-sm">
@@ -129,6 +141,7 @@ export default function CardsScreen() {
                 onChange={setAmountPaid}
                 onBlur={() => amountPaid !== detail.cardMonth.amountPaid && amountPaidMutation.mutate(amountPaid)}
                 className="mb-4 w-full text-2xl"
+                ariaLabel="Monto pagado"
               />
               <div className="mb-2 flex items-center justify-between text-sm">
                 <span className="text-ink-muted">Σ items registrados</span>
@@ -370,6 +383,7 @@ function ItemForm({
         onChange={setAmount}
         allowNegative
         className="rounded-lg border border-line px-3 py-2 text-sm"
+        ariaLabel="Monto del item"
       />
       <select value={type} onChange={(e) => setType(e.target.value as CardItemType)} className="rounded-lg border border-line px-3 py-2 text-sm">
         <option value="personal">Personal</option>

@@ -135,6 +135,23 @@ export async function fetchMonthComparison(): Promise<MonthComparisonRow[]> {
   return body.months;
 }
 
+/** Descarga el .xlsx del mes (bolsas + transacciones) y dispara el guardado en el navegador. */
+export async function downloadMonthExport(monthId: string, filename: string): Promise<void> {
+  const response = await fetch(buildApiUrl(`/months/${monthId}/export`), { credentials: 'include' });
+  if (!response.ok) {
+    throw new Error(`No se pudo exportar el mes (${response.status})`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export type QuickEntryType = 'personal' | 'joint';
 export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
 

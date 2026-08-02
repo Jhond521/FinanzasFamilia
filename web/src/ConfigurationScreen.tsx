@@ -148,6 +148,11 @@ export default function ConfigurationScreen() {
                 <div className="text-right">Hits</div>
                 <div />
               </div>
+              {rules?.length === 0 && (
+                <p className="py-8 text-center text-sm text-ink-muted">
+                  Todavia no hay reglas de clasificacion configuradas.
+                </p>
+              )}
               {rules?.map((rule) => (
                 <div
                   key={rule.id}

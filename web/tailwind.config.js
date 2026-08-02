@@ -18,7 +18,9 @@ export default {
           DEFAULT: 'oklch(0.22 0.01 60)', // texto principal
           soft: 'oklch(0.35 0.01 60)',
           muted: 'oklch(0.52 0.01 60)', // texto secundario
-          faint: 'oklch(0.60 0.01 60)',
+          // Oscurecido de 0.60 a 0.56 (Fase 6, auditoria de accesibilidad): a 0.60 el contraste
+          // como texto sobre blanco/cream era ~3.8-4.0:1, por debajo del 4.5:1 AA para texto normal.
+          faint: 'oklch(0.56 0.01 60)',
         },
         line: 'oklch(0.90 0.008 75)', // bordes
         brand: {
@@ -27,15 +29,20 @@ export default {
           light: 'oklch(0.95 0.03 350)',
         },
         success: {
-          DEFAULT: 'oklch(0.60 0.14 145)',
+          // Oscurecido de 0.60 a 0.55 (Fase 6): a 0.60 el contraste de texto sobre blanco era
+          // ~3.7:1, por debajo del 4.5:1 AA (se usa en texto pequeño, no clasifica como "grande").
+          DEFAULT: 'oklch(0.55 0.14 145)',
           light: 'oklch(0.95 0.05 145)',
         },
         danger: {
-          DEFAULT: 'oklch(0.55 0.19 25)',
+          // Oscurecido de 0.55 a 0.54 (Fase 6): el contraste sobre danger-light rondaba 4.39:1.
+          DEFAULT: 'oklch(0.54 0.19 25)',
           light: 'oklch(0.95 0.05 25)',
         },
         warning: {
-          DEFAULT: 'oklch(0.72 0.15 80)',
+          // Oscurecido de 0.72 a 0.57 (Fase 6): a 0.72 el contraste de texto sobre blanco/cream
+          // era ~2.5:1 (falla incluso el umbral de texto grande); 0.57 da ~4.5:1 AA.
+          DEFAULT: 'oklch(0.57 0.15 80)',
           light: 'oklch(0.95 0.06 80)',
         },
       },

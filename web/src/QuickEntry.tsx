@@ -168,7 +168,7 @@ export default function QuickEntry({ currentUser }: Props) {
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-xl border border-line bg-white p-4">
-        <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" />
+        <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" ariaLabel="Monto" />
 
         <div className="flex rounded-xl bg-cream-surface p-1">
           {(['personal', 'joint'] as const).map((t) => (
@@ -176,7 +176,7 @@ export default function QuickEntry({ currentUser }: Props) {
               key={t}
               type="button"
               onClick={() => setType(t)}
-              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
+              className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-sm font-semibold transition ${
                 type === t ? 'bg-white text-ink shadow-sm' : 'text-ink-muted'
               }`}
             >
@@ -202,7 +202,7 @@ export default function QuickEntry({ currentUser }: Props) {
             <button
               type="button"
               onClick={() => setDateMode('today')}
-              className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+              className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-xs font-semibold ${
                 dateMode === 'today' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
@@ -211,7 +211,7 @@ export default function QuickEntry({ currentUser }: Props) {
             <button
               type="button"
               onClick={() => setDateMode('yesterday')}
-              className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+              className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-xs font-semibold ${
                 dateMode === 'yesterday' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
@@ -220,7 +220,7 @@ export default function QuickEntry({ currentUser }: Props) {
             <button
               type="button"
               onClick={() => setDateMode('custom')}
-              className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+              className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-xs font-semibold ${
                 dateMode === 'custom' ? 'bg-brand text-white' : 'border border-line text-ink-soft'
               }`}
             >
@@ -247,7 +247,7 @@ export default function QuickEntry({ currentUser }: Props) {
                 key={u.id}
                 type="button"
                 onClick={() => setUserId(u.id)}
-                className={`flex-1 rounded-lg py-2 text-xs font-semibold ${
+                className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-xs font-semibold ${
                   userId === u.id ? 'border border-brand bg-brand-light text-brand' : 'border border-line text-ink-soft'
                 }`}
               >
@@ -278,6 +278,10 @@ export default function QuickEntry({ currentUser }: Props) {
           </button>
         </div>
       </form>
+
+      {currentMonth && recentEntries && recentEntries.length === 0 && (
+        <p className="text-center text-sm text-ink-muted">Todavia no hay registros este mes.</p>
+      )}
 
       {recentEntries && recentEntries.length > 0 && (
         <section className="flex flex-col gap-1">

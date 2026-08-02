@@ -44,6 +44,12 @@ export default function ReviewQueueScreen() {
           </select>
         </div>
 
+        {months && months.length === 0 && (
+          <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
+            Todavia no hay meses creados — crea uno desde el Dashboard.
+          </p>
+        )}
+
         {selectedMonthId && (
           <>
             <LearningBanner monthId={selectedMonthId} />
@@ -276,21 +282,21 @@ function ReviewCard({
         <button
           type="button"
           onClick={() => onClassify('personal', categoryId, detail || null)}
-          className="rounded-lg border border-line py-2 text-xs font-bold text-ink-soft hover:border-brand hover:text-brand"
+          className="flex min-h-11 items-center justify-center rounded-lg border border-line py-2 text-xs font-bold text-ink-soft hover:border-brand hover:text-brand"
         >
           ← Personal
         </button>
         <button
           type="button"
           onClick={() => onClassify('movement', null, detail || null)}
-          className="rounded-lg border border-line py-2 text-xs font-bold text-ink-soft hover:border-brand hover:text-brand"
+          className="flex min-h-11 items-center justify-center rounded-lg border border-line py-2 text-xs font-bold text-ink-soft hover:border-brand hover:text-brand"
         >
           ↑ Movimiento
         </button>
         <button
           type="button"
           onClick={() => onClassify('joint', categoryId, detail || null)}
-          className="rounded-lg bg-brand py-2 text-xs font-bold text-white hover:bg-brand-hover"
+          className="flex min-h-11 items-center justify-center rounded-lg bg-brand py-2 text-xs font-bold text-white hover:bg-brand-hover"
         >
           Conjunto →
         </button>

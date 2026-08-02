@@ -14,6 +14,9 @@ type CurrencyInputProps = {
   variant?: 'default' | 'large';
   /** Permite un "-" inicial (ej. items de tarjeta que admiten devoluciones/cancelaciones). */
   allowNegative?: boolean;
+  /** Nombre accesible del campo cuando no hay un <label> visible asociado (ej. el monto grande
+   * de registro rapido, que por diseño no lleva texto de label encima). */
+  ariaLabel?: string;
 };
 
 export function CurrencyInput({
@@ -25,6 +28,7 @@ export function CurrencyInput({
   className = '',
   variant = 'default',
   allowNegative = false,
+  ariaLabel,
 }: CurrencyInputProps) {
   const [display, setDisplay] = useState(() => formatAmountDisplay(value));
   const isLarge = variant === 'large';
@@ -61,6 +65,7 @@ export function CurrencyInput({
         onBlur={onBlur}
         disabled={disabled}
         placeholder={placeholder}
+        aria-label={ariaLabel}
       />
     </div>
   );
