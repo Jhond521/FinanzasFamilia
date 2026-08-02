@@ -147,11 +147,6 @@ export default function QuickEntry({ currentUser }: Props) {
     saveMutation.mutate();
   }
 
-  const monthMinDate = currentMonth ? `${currentMonth.year}-${String(currentMonth.month).padStart(2, '0')}-01` : undefined;
-  const monthMaxDate = currentMonth
-    ? toDateOnlyLocal(new Date(currentMonth.year, currentMonth.month, 0))
-    : undefined;
-
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 p-4 pb-10">
       <header className="flex items-center justify-between">
@@ -231,8 +226,6 @@ export default function QuickEntry({ currentUser }: Props) {
             <input
               type="date"
               value={customDate}
-              min={monthMinDate}
-              max={monthMaxDate}
               onChange={(e) => setCustomDate(e.target.value)}
               className="mt-2 rounded-lg border border-line px-3 py-2 text-sm"
             />
