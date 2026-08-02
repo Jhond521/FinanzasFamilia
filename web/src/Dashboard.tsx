@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
+  closeMonth,
   createMonth,
+  fetchMonthComparison,
   fetchMonthDetail,
   fetchMonthSummary,
   fetchMonths,
   fetchQuickEntries,
   fetchTransactions,
   fetchUsers,
+  reopenMonth,
   replaceMonthIncomes,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
@@ -87,6 +90,8 @@ export default function Dashboard() {
         )}
 
         {selectedMonthId && users && <MonthPanel monthId={selectedMonthId} users={users} />}
+
+        <MonthComparisonSection />
       </div>
     </div>
   );
@@ -134,6 +139,24 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
   });
 
   const isClosed = detail?.month.status === 'closed';
+
+  const invalidateMonth = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['months'] }),
+      queryClient.invalidateQueries({ queryKey: ['months', monthId, 'detail'] }),
+      queryClient.invalidateQueries({ queryKey: ['months', monthId, 'summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['months', 'comparison'] }),
+    ]);
+
+  const closeMonthMutation = useMutation({
+    mutationFn: () => closeMonth(monthId),
+    onSuccess: invalidateMonth,
+  });
+
+  const reopenMonthMutation = useMutation({
+    mutationFn: () => reopenMonth(monthId),
+    onSuccess: invalidateMonth,
+  });
 
   const { data: needsReview } = useQuery({
     queryKey: ['transactions', monthId, { needsReview: true }],
@@ -232,6 +255,92 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           })}
         </section>
       )}
+
+      {summary && (
+        <section className="rounded-xl bg-ink p-5 text-white shadow-sm">
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-white/60">
+            Cierre del mes · ahorro real
+          </h2>
+          <p className="mb-4 max-w-xl text-sm leading-relaxed text-white/85">
+            {Number(summary.close.sharedExpensesExcess) > 0
+              ? `Gastos del Mes se pasó ${formatCOP(summary.close.sharedExpensesExcess)}. El exceso se descuenta de lo que se mueve a ahorros, proporcional al ingreso de cada uno.`
+              : 'Gastos del Mes no se paso del presupuesto: el ahorro real es igual al aporte calculado a Ahorros Conjuntos.'}
+          </p>
+          <div className="flex flex-wrap gap-8">
+            {summary.close.perPerson.map((p) => (
+              <div key={p.userId}>
+                <div className="text-xs text-white/60">
+                  {users.find((u) => u.id === p.userId)?.name ?? p.userId} mueve a ahorros
+                </div>
+                <div className="text-lg font-extrabold">{formatCOP(p.realSavings)}</div>
+                <div className="mt-2 text-xs text-white/60">Deja en cuenta</div>
+                <div className="text-sm font-bold">{formatCOP(p.leaveInAccount)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 flex justify-end">
+            {isClosed ? (
+              <button
+                type="button"
+                className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+                onClick={() => reopenMonthMutation.mutate()}
+                disabled={reopenMonthMutation.isPending}
+              >
+                Reabrir mes
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+                onClick={() => closeMonthMutation.mutate()}
+                disabled={closeMonthMutation.isPending}
+              >
+                Cerrar mes
+              </button>
+            )}
+          </div>
+        </section>
+      )}
     </div>
+  );
+}
+
+function MonthComparisonSection() {
+  const { data: months } = useQuery({ queryKey: ['months', 'comparison'], queryFn: fetchMonthComparison });
+
+  if (!months || months.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-medium text-ink-muted">Comparativo mes a mes</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-sm">
+          <thead>
+            <tr className="text-left text-xs text-ink-faint">
+              <th className="pb-2 pr-3 font-medium">Mes</th>
+              <th className="pb-2 pr-3 font-medium">Ingresos</th>
+              <th className="pb-2 pr-3 font-medium">Gastado conjunto</th>
+              <th className="pb-2 font-medium">Ahorro real total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {months.map((m) => {
+              const sharedBucket = m.buckets.find((b) => b.kind === 'shared_expenses');
+              const totalRealSavings = m.close.perPerson.reduce((sum, p) => sum + Number(p.realSavings), 0);
+              return (
+                <tr key={m.monthId} className="border-t border-line">
+                  <td className="py-2 pr-3 font-medium text-ink">
+                    {MESES[m.month - 1]} {m.year}
+                  </td>
+                  <td className="py-2 pr-3 text-ink-muted">{formatCOP(m.totalIncome)}</td>
+                  <td className="py-2 pr-3 text-ink-muted">{sharedBucket ? formatCOP(sharedBucket.spent) : '—'}</td>
+                  <td className="py-2 font-semibold text-success">{formatCOP(String(totalRealSavings))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

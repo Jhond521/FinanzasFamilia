@@ -138,9 +138,25 @@ model Month {
   transactions  Transaction[]
   importBatches ImportBatch[]
   cardMonths    CardMonth[]
+  summary       MonthSummary?
 
   @@unique([year, month])
   @@map("months")
+}
+
+// Snapshot congelado al cerrar el mes (RF7): mismas cifras que GET /months/:id/summary
+// en el momento del cierre (bolsas, ahorro real, dejar en cuenta), para que no se muevan
+// si despues cambia la config general de buckets o se edita una transaccion del mes.
+model MonthSummary {
+  id        String   @id @default(uuid())
+  monthId   String   @unique @map("month_id")
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  month Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+
+  @@map("month_summaries")
 }
 
 model Income {

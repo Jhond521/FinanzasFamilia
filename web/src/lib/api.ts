@@ -97,14 +97,42 @@ export async function fetchMonthDetail(monthId: string): Promise<MonthDetail> {
   return apiFetch<MonthDetail>(`/months/${monthId}`);
 }
 
+export type MonthCloseInfo = {
+  sharedExpensesExcess: string;
+  perPerson: { userId: string; realSavings: string; leaveInAccount: string }[];
+};
+
 export type MonthSummaryDetail = {
   month: { id: string; year: number; month: number; status: 'open' | 'closed' };
   totalIncome: string;
   buckets: MonthBucketSummary[];
+  close: MonthCloseInfo;
 };
 
 export async function fetchMonthSummary(monthId: string): Promise<MonthSummaryDetail> {
   return apiFetch<MonthSummaryDetail>(`/months/${monthId}/summary`);
+}
+
+export async function closeMonth(monthId: string): Promise<{ month: MonthDetail['month']; summary: MonthSummaryDetail }> {
+  return apiFetch(`/months/${monthId}/close`, { method: 'POST' });
+}
+
+export async function reopenMonth(monthId: string): Promise<{ month: MonthDetail['month'] }> {
+  return apiFetch(`/months/${monthId}/reopen`, { method: 'POST' });
+}
+
+export type MonthComparisonRow = {
+  monthId: string;
+  year: number;
+  month: number;
+  totalIncome: string;
+  buckets: MonthBucketSummary[];
+  close: MonthCloseInfo;
+};
+
+export async function fetchMonthComparison(): Promise<MonthComparisonRow[]> {
+  const body = await apiFetch<{ months: MonthComparisonRow[] }>('/months/comparison');
+  return body.months;
 }
 
 export type QuickEntryType = 'personal' | 'joint';
