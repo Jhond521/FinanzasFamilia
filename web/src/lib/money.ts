@@ -13,23 +13,74 @@ export function formatCOP(amount: string): string {
 }
 
 /**
- * Extrae los pesos enteros de un string decimal ("11439100.00" -> "11439100").
- * Los ingresos de esta app nunca tienen centavos reales (ver formatCOP, que igual siempre
- * muestra ",00"), asi que se descarta la parte decimal en vez de arrastrarla como mas digitos.
+ * Normaliza lo que el usuario escribio o pego a un string decimal canonico: punto como separador
+ * decimal (igual que el resto de la API/Decimal), maximo 2 decimales, sin separadores de miles.
+ *
+ * La coma es siempre el separador decimal: nuestro propio formateo (ver formatAmountDisplay)
+ * nunca agrega una coma salvo para marcar los decimales, asi que no es ambigua.
+ *
+ * El punto si es ambiguo: puede ser un separador de miles que quedo "colado" en el valor nativo
+ * del input porque ya lo habiamos agregado nosotros al formatear el keystroke anterior (ej. el
+ * usuario tenia "1.234" en pantalla y escribio otro digito -> el input llega con "1.2345"), o
+ * puede ser un separador decimal real que el usuario pego (ej. "50000.5"). Un separador de miles
+ * siempre deja exactamente 3 digitos en el grupo que le sigue (asi agrupa Intl.NumberFormat);
+ * un separador decimal real, al tener maximo 2 decimales, nunca deja 3 o mas. Con eso se
+ * distinguen sin ambiguedad.
+ *
+ * `allowNegative` habilita un "-" inicial (ej. items de tarjeta que admiten devoluciones/
+ * cancelaciones, ver ticket #3) — por defecto false, igual que el comportamiento previo, para no
+ * afectar los demas usos de CurrencyInput (ingresos, registro rapido) donde el monto siempre es
+ * positivo y el signo lo aplica el backend.
  */
-export function toIntegerDigits(value: string): string {
-  const [integerPart] = value.split('.');
-  return integerPart.replace(/\D/g, '');
+export function sanitizeAmountInput(raw: string, allowNegative = false): string {
+  const isNegative = allowNegative && raw.trimStart().startsWith('-');
+  const cleaned = raw.replace(/[^\d.,]/g, '');
+
+  let result: string;
+  const commaIndex = cleaned.lastIndexOf(',');
+  if (commaIndex !== -1) {
+    const integerDigits = cleaned.slice(0, commaIndex).replace(/[.,]/g, '');
+    const decimalDigits = cleaned.slice(commaIndex + 1).replace(/[.,]/g, '').slice(0, 2);
+    result = `${integerDigits}.${decimalDigits}`;
+  } else {
+    const dotIndex = cleaned.lastIndexOf('.');
+    if (dotIndex === -1) {
+      result = cleaned;
+    } else {
+      const tail = cleaned.slice(dotIndex + 1).replace(/\./g, '');
+      if (tail.length >= 3) {
+        result = cleaned.replace(/\./g, '');
+      } else {
+        const integerDigits = cleaned.slice(0, dotIndex).replace(/\./g, '');
+        result = `${integerDigits}.${tail}`;
+      }
+    }
+  }
+
+  if (!isNegative) return result;
+  return result ? `-${result}` : '-';
 }
 
 /**
- * Formatea digitos enteros con separador de miles, mientras se escribe. Los dos decimales se
- * muestran aparte como sufijo fijo (ver CurrencyInput) — no van en el valor editable, porque el
- * cursor terminaria cayendo despues de la coma y los digitos escritos ahi se perderian.
+ * Formatea un string decimal canonico ("11439100.5") para mostrarlo mientras se escribe: miles
+ * agrupados en la parte entera + coma decimal, preservando los decimales tal cual los escribio el
+ * usuario (sin forzar a 2 digitos, porque interrumpiria la edicion en curso). Preserva un "-"
+ * inicial si el valor viene negativo (ver `allowNegative` en sanitizeAmountInput).
  */
-export function formatThousands(digits: string): string {
-  if (!digits) return '';
-  return groupFormatter.format(Number(digits));
+export function formatAmountDisplay(value: string): string {
+  if (!value) return '';
+  const isNegative = value.startsWith('-');
+  const unsigned = isNegative ? value.slice(1) : value;
+  if (isNegative && !unsigned) return '-';
+
+  const [integerPart, decimalPart] = unsigned.split('.');
+  const groupedInteger = integerPart
+    ? groupFormatter.format(Number(integerPart))
+    : decimalPart !== undefined
+      ? '0'
+      : '';
+  const body = decimalPart !== undefined ? `${groupedInteger},${decimalPart}` : groupedInteger;
+  return isNegative ? `-${body}` : body;
 }
 
 export const MESES = [

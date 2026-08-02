@@ -3,14 +3,18 @@ export function buildApiUrl(path: string): string {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = init?.body instanceof FormData;
   const response = await fetch(buildApiUrl(path), {
     credentials: 'include',
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: init?.body && !isFormData ? { 'Content-Type': 'application/json' } : undefined,
     ...init,
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
     throw new Error(body?.error?.message ?? `Error de red (${response.status})`);
+  }
+  if (response.status === 204) {
+    return undefined as T;
   }
   return response.json() as Promise<T>;
 }
@@ -78,7 +82,9 @@ export type MonthBucketSummary = {
   splitMode: SplitMode;
   percentage: string;
   budget: string;
-  contributions: { userId: string; amount: string }[];
+  spent: string;
+  available: string;
+  contributions: { userId: string; amount: string; spent?: string }[];
 };
 
 export type MonthDetail = {
@@ -91,12 +97,478 @@ export async function fetchMonthDetail(monthId: string): Promise<MonthDetail> {
   return apiFetch<MonthDetail>(`/months/${monthId}`);
 }
 
+// ---- Rubros (buckets) — config general (Fase 1, sin cliente hasta el ticket #12) ----
+
+export type Bucket = {
+  id: string;
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active: boolean;
+  sortOrder: number;
+};
+
+export async function fetchBuckets(): Promise<Bucket[]> {
+  const body = await apiFetch<{ buckets: Bucket[] }>('/buckets');
+  return body.buckets;
+}
+
+export type BucketInput = {
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active?: boolean;
+};
+
+export async function createBucket(input: BucketInput): Promise<Bucket> {
+  const body = await apiFetch<{ bucket: Bucket }>('/buckets', { method: 'POST', body: JSON.stringify(input) });
+  return body.bucket;
+}
+
+export async function updateBucket(id: string, input: Partial<BucketInput>): Promise<Bucket> {
+  const body = await apiFetch<{ bucket: Bucket }>(`/buckets/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  return body.bucket;
+}
+
+// ---- Snapshot de rubros del mes (editable mientras el mes este abierto) ----
+
+export type MonthBucketInput = {
+  id?: string;
+  name: string;
+  percentage: string;
+  splitMode: SplitMode;
+  kind: BucketKind;
+  active: boolean;
+};
+
+export async function replaceMonthBuckets(
+  monthId: string,
+  buckets: MonthBucketInput[],
+): Promise<MonthDetail['monthBuckets']> {
+  const body = await apiFetch<{ monthBuckets: MonthDetail['monthBuckets'] }>(`/months/${monthId}/buckets`, {
+    method: 'PUT',
+    body: JSON.stringify(buckets),
+  });
+  return body.monthBuckets;
+}
+
+export type MonthCloseInfo = {
+  sharedExpensesExcess: string;
+  perPerson: { userId: string; realSavings: string; leaveInAccount: string }[];
+};
+
 export type MonthSummaryDetail = {
   month: { id: string; year: number; month: number; status: 'open' | 'closed' };
   totalIncome: string;
   buckets: MonthBucketSummary[];
+  close: MonthCloseInfo;
 };
 
 export async function fetchMonthSummary(monthId: string): Promise<MonthSummaryDetail> {
   return apiFetch<MonthSummaryDetail>(`/months/${monthId}/summary`);
+}
+
+export async function closeMonth(monthId: string): Promise<{ month: MonthDetail['month']; summary: MonthSummaryDetail }> {
+  return apiFetch(`/months/${monthId}/close`, { method: 'POST' });
+}
+
+export async function reopenMonth(monthId: string): Promise<{ month: MonthDetail['month'] }> {
+  return apiFetch(`/months/${monthId}/reopen`, { method: 'POST' });
+}
+
+export type MonthComparisonRow = {
+  monthId: string;
+  year: number;
+  month: number;
+  totalIncome: string;
+  buckets: MonthBucketSummary[];
+  close: MonthCloseInfo;
+};
+
+export async function fetchMonthComparison(): Promise<MonthComparisonRow[]> {
+  const body = await apiFetch<{ months: MonthComparisonRow[] }>('/months/comparison');
+  return body.months;
+}
+
+/** Descarga el .xlsx del mes (bolsas + transacciones) y dispara el guardado en el navegador. */
+export async function downloadMonthExport(monthId: string, filename: string): Promise<void> {
+  const response = await fetch(buildApiUrl(`/months/${monthId}/export`), { credentials: 'include' });
+  if (!response.ok) {
+    throw new Error(`No se pudo exportar el mes (${response.status})`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export type QuickEntryType = 'personal' | 'joint';
+export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
+
+export type QuickEntry = {
+  id: string;
+  monthId: string;
+  userId: string;
+  createdBy: string;
+  amount: string;
+  description: string;
+  type: QuickEntryType;
+  date: string;
+  status: QuickEntryStatus;
+};
+
+export async function fetchQuickEntries(monthId: string, status?: QuickEntryStatus): Promise<QuickEntry[]> {
+  const query = new URLSearchParams({ monthId, ...(status ? { status } : {}) });
+  const body = await apiFetch<{ quickEntries: QuickEntry[] }>(`/quick-entries?${query.toString()}`);
+  return body.quickEntries;
+}
+
+export async function createQuickEntry(input: {
+  amount: string;
+  description: string;
+  type: QuickEntryType;
+  date?: string;
+  userId?: string;
+}): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>('/quick-entries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntry;
+}
+
+export async function updateQuickEntry(
+  id: string,
+  input: Partial<{ amount: string; description: string; type: QuickEntryType; date: string; userId: string }>,
+): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>(`/quick-entries/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntry;
+}
+
+export async function deleteQuickEntry(id: string): Promise<void> {
+  await apiFetch<void>(`/quick-entries/${id}`, { method: 'DELETE' });
+}
+
+export async function markQuickEntryNoMatchExpected(id: string, noMatchExpected: boolean): Promise<QuickEntry> {
+  const body = await apiFetch<{ quickEntry: QuickEntry }>(`/quick-entries/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status: noMatchExpected ? 'no_match_expected' : 'pending' }),
+  });
+  return body.quickEntry;
+}
+
+// ---- Fase 3: categorias, reglas, importacion y transacciones ----
+
+export type Category = { id: string; name: string; active: boolean; sortOrder: number };
+
+export async function fetchCategories(): Promise<Category[]> {
+  const body = await apiFetch<{ categories: Category[] }>('/categories');
+  return body.categories;
+}
+
+export type RuleSetType = 'personal' | 'joint' | 'movement';
+export type RuleMode = 'auto' | 'suggest';
+export type RuleAmountSign = 'any' | 'positive' | 'negative';
+export type RuleOrigin = 'seed' | 'user' | 'learned';
+
+export type Rule = {
+  id: string;
+  pattern: string;
+  amountSign: RuleAmountSign;
+  setType: RuleSetType;
+  setCategoryId: string | null;
+  setDetail: string | null;
+  mode: RuleMode;
+  active: boolean;
+  hitCount: number;
+  createdFrom: RuleOrigin;
+};
+
+export async function fetchRules(): Promise<Rule[]> {
+  const body = await apiFetch<{ rules: Rule[] }>('/rules');
+  return body.rules;
+}
+
+export type RuleInput = {
+  pattern: string;
+  setType: RuleSetType;
+  setCategoryId?: string | null;
+  setDetail?: string | null;
+  mode: RuleMode;
+  amountSign?: RuleAmountSign;
+};
+
+export async function createRule(input: RuleInput): Promise<Rule> {
+  const body = await apiFetch<{ rule: Rule }>('/rules', { method: 'POST', body: JSON.stringify(input) });
+  return body.rule;
+}
+
+export async function updateRule(id: string, input: Partial<RuleInput & { active: boolean }>): Promise<Rule> {
+  const body = await apiFetch<{ rule: Rule }>(`/rules/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  return body.rule;
+}
+
+export async function deleteRule(id: string): Promise<void> {
+  await apiFetch<void>(`/rules/${id}`, { method: 'DELETE' });
+}
+
+export type RuleSuggestion = {
+  pattern: string;
+  setType: RuleSetType;
+  setCategoryId: string | null;
+  setDetail: string | null;
+  count: number;
+};
+
+export async function fetchRuleSuggestions(monthId: string): Promise<RuleSuggestion[]> {
+  const body = await apiFetch<{ suggestions: RuleSuggestion[] }>(`/rules/suggestions?monthId=${monthId}`);
+  return body.suggestions;
+}
+
+export async function acceptRuleSuggestion(
+  input: RuleSuggestion & { monthId?: string },
+): Promise<{ rule: Rule; reclassified: number }> {
+  return apiFetch(`/rules/suggestions/accept`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export type TransactionType = 'personal' | 'joint' | 'movement' | 'unclassified';
+export type ClassifiedBy = 'rule' | 'match' | 'user' | null;
+
+export type Transaction = {
+  id: string;
+  monthId: string;
+  ownerUserId: string;
+  importBatchId: string;
+  date: string;
+  bankDescription: string;
+  bankReference: string | null;
+  amount: string;
+  type: TransactionType;
+  categoryId: string | null;
+  detail: string | null;
+  classifiedBy: ClassifiedBy;
+  ruleId: string | null;
+  needsReview: boolean;
+  suggestedType: TransactionType | null;
+  suggestedCategoryId: string | null;
+  suggestedDetail: string | null;
+  ruleConflicts: { id: string; setType: RuleSetType; setCategoryId: string | null; setDetail: string | null }[];
+};
+
+export async function fetchTransactions(params: {
+  monthId: string;
+  type?: TransactionType;
+  categoryId?: string;
+  needsReview?: boolean;
+  ownerUserId?: string;
+  q?: string;
+}): Promise<Transaction[]> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(key, String(value));
+  }
+  const body = await apiFetch<{ transactions: Transaction[] }>(`/transactions?${query.toString()}`);
+  return body.transactions;
+}
+
+export async function updateTransaction(
+  id: string,
+  input: Partial<{ type: TransactionType; categoryId: string | null; detail: string | null }>,
+): Promise<Transaction> {
+  const body = await apiFetch<{ transaction: Transaction }>(`/transactions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.transaction;
+}
+
+export async function fetchMatchCandidates(transactionId: string): Promise<QuickEntry[]> {
+  const body = await apiFetch<{ candidates: QuickEntry[] }>(`/transactions/${transactionId}/match-candidates`);
+  return body.candidates;
+}
+
+export async function matchTransaction(transactionId: string, quickEntryId: string): Promise<Transaction> {
+  const body = await apiFetch<{ transaction: Transaction }>(`/transactions/${transactionId}/match`, {
+    method: 'POST',
+    body: JSON.stringify({ quickEntryId }),
+  });
+  return body.transaction;
+}
+
+export type ImportBatch = {
+  id: string;
+  monthId: string;
+  ownerUserId: string;
+  filename: string;
+  uploadedBy: string;
+  rowCount: number;
+  importedCount: number;
+  duplicateCount: number;
+  status: 'done' | 'undone';
+  createdAt: string;
+  owner?: User;
+  uploader?: User;
+};
+
+export type ImportResult = {
+  batchId: string;
+  imported: number;
+  duplicatesSkipped: number;
+  autoClassified: number;
+  needsReview: number;
+  matchedQuickEntries: number;
+  rejectedOutOfMonth: number;
+};
+
+export async function uploadImport(file: File, monthId: string, ownerUserId: string): Promise<ImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('monthId', monthId);
+  formData.append('ownerUserId', ownerUserId);
+  return apiFetch<ImportResult>('/imports', { method: 'POST', body: formData });
+}
+
+export type ImportPreviewRow = { date: string; bankDescription: string; bankReference: string | null; amount: string };
+
+export async function previewImport(file: File): Promise<{ totalRows: number; rows: ImportPreviewRow[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiFetch('/imports/preview', { method: 'POST', body: formData });
+}
+
+export async function fetchImportBatches(): Promise<ImportBatch[]> {
+  const body = await apiFetch<{ batches: ImportBatch[] }>('/imports');
+  return body.batches;
+}
+
+export async function undoImportBatch(batchId: string): Promise<void> {
+  await apiFetch<void>(`/imports/${batchId}/undo`, { method: 'POST' });
+}
+
+export type SkippedDuplicate = {
+  id: string;
+  importBatchId: string;
+  dedupeKey: string;
+  date: string;
+  bankDescription: string;
+  bankReference: string | null;
+  amount: string;
+  resolution: 'pending' | 'confirmed_duplicate' | 'forced_twin';
+  forcedTransactionId: string | null;
+};
+
+export type DuplicateGroup = { dedupeKey: string; existing: Transaction[]; skipped: SkippedDuplicate[] };
+
+export async function fetchImportDuplicates(batchId: string): Promise<DuplicateGroup[]> {
+  const body = await apiFetch<{ groups: DuplicateGroup[] }>(`/imports/${batchId}/duplicates`);
+  return body.groups;
+}
+
+export async function confirmSkippedDuplicate(id: string): Promise<void> {
+  await apiFetch<void>(`/skipped-duplicates/${id}/confirm`, { method: 'POST' });
+}
+
+export async function forceSkippedDuplicate(id: string): Promise<void> {
+  await apiFetch<void>(`/skipped-duplicates/${id}/force`, { method: 'POST' });
+}
+
+export async function bulkConfirmSkippedDuplicates(batchId: string): Promise<number> {
+  const body = await apiFetch<{ confirmed: number }>('/skipped-duplicates/bulk-confirm', {
+    method: 'POST',
+    body: JSON.stringify({ batchId }),
+  });
+  return body.confirmed;
+}
+
+// ---- Fase 4: tarjetas Nu Bank ----
+
+export type CreditCard = { id: string; name: string; ownerUserId: string; active: boolean; owner?: User };
+
+export async function fetchCards(): Promise<CreditCard[]> {
+  const body = await apiFetch<{ cards: CreditCard[] }>('/cards');
+  return body.cards;
+}
+
+export type CardItemType = 'personal' | 'joint';
+
+export type CardItem = {
+  id: string;
+  cardMonthId: string;
+  description: string;
+  date: string | null;
+  amount: string;
+  type: CardItemType;
+  isAdjustment: boolean;
+};
+
+export type CardDiffStatus = 'matched' | 'short' | 'over';
+
+export type CardMonthDetail = {
+  cardMonth: { id: string; creditCardId: string; monthId: string; amountPaid: string };
+  items: CardItem[];
+  itemsTotal: string;
+  diff: string;
+  diffStatus: CardDiffStatus;
+  split: { personal: string; joint: string; personalPercentage: string; jointPercentage: string };
+};
+
+export async function fetchCardMonth(cardId: string, monthId: string): Promise<CardMonthDetail> {
+  return apiFetch<CardMonthDetail>(`/cards/${cardId}/months/${monthId}`);
+}
+
+export type CardMutationResult = { itemsTotal: string; diff: string; diffStatus: CardDiffStatus };
+
+export async function updateCardMonthAmountPaid(
+  cardMonthId: string,
+  amountPaid: string,
+): Promise<CardMutationResult & { cardMonth: { id: string; amountPaid: string } }> {
+  return apiFetch(`/card-months/${cardMonthId}`, { method: 'PUT', body: JSON.stringify({ amountPaid }) });
+}
+
+export type CardItemInput = {
+  description: string;
+  date?: string;
+  amount: string;
+  type: CardItemType;
+  isAdjustment?: boolean;
+};
+
+export async function createCardItem(
+  cardMonthId: string,
+  input: CardItemInput,
+): Promise<CardMutationResult & { item: CardItem }> {
+  return apiFetch(`/card-months/${cardMonthId}/items`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function updateCardItem(
+  id: string,
+  input: Partial<CardItemInput>,
+): Promise<CardMutationResult & { item: CardItem }> {
+  return apiFetch(`/card-items/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export async function deleteCardItem(id: string): Promise<CardMutationResult> {
+  return apiFetch(`/card-items/${id}`, { method: 'DELETE' });
+}
+
+export type ParsedNuRow = { date: string; description: string; amount: string };
+
+export async function importNuStatement(cardMonthId: string, file: File): Promise<ParsedNuRow[]> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const body = await apiFetch<{ items: ParsedNuRow[] }>(`/card-months/${cardMonthId}/import`, {
+    method: 'POST',
+    body: formData,
+  });
+  return body.items;
 }

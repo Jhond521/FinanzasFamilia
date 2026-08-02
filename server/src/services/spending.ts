@@ -1,0 +1,48 @@
+import { Prisma } from '@prisma/client';
+
+const { Decimal } = Prisma;
+type Decimal = InstanceType<typeof Prisma.Decimal>;
+type DecimalInput = Decimal | string | number;
+
+export type QuickEntryType = 'personal' | 'joint';
+export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
+
+export type SpendingEntry = {
+  userId: string;
+  amount: DecimalInput; // se guarda negativo si es gasto, como el extracto
+  type: QuickEntryType;
+  // Las transactions (Fase 3) no tienen este campo — solo los quick_entries lo usan; una entrada
+  // sin status siempre cuenta (una transaction ya es la fuente de verdad, no algo "pendiente").
+  status?: QuickEntryStatus;
+};
+
+/**
+ * Monto que cuenta como gastado para una entrada. Los registros 'matched' no cuentan
+ * aqui: una vez matcheen con una transaccion (Fase 3), el gasto se cuenta por la
+ * transaccion, no por el registro rapido (evita doble conteo).
+ *
+ * Se niega el monto en vez de tomar su valor absoluto: para quick_entries (siempre negativos,
+ * regla de Fase 2) da exactamente lo mismo que abs(), pero para transactions (Fase 3), que si
+ * pueden traer signo positivo (abonos/intereses tipo personal), negar es lo correcto — un abono
+ * resta del gastado en vez de sumar (docs/02-modelo-de-datos.md, calculo de "Gastado personal").
+ */
+function countableAmount(entry: SpendingEntry): Decimal {
+  if (entry.status === 'matched') {
+    return new Decimal(0);
+  }
+  return new Decimal(entry.amount).negated();
+}
+
+/** Gastado conjunto: suma de todos los registros rapidos tipo 'joint' del mes. */
+export function jointSpent(entries: SpendingEntry[]): Decimal {
+  return entries
+    .filter((entry) => entry.type === 'joint')
+    .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
+}
+
+/** Gastado personal de una persona: suma de sus registros rapidos tipo 'personal'. */
+export function personalSpent(entries: SpendingEntry[], userId: string): Decimal {
+  return entries
+    .filter((entry) => entry.type === 'personal' && entry.userId === userId)
+    .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
+}

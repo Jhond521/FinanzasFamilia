@@ -1,15 +1,33 @@
 import { Router } from 'express';
-import { Prisma, type Month } from '@prisma/client';
+import { Prisma, type Bucket, type Month } from '@prisma/client';
 import { z } from 'zod';
+import * as XLSX from 'xlsx';
 import { prisma } from '../lib/prisma';
+import { toDateOnly } from '../lib/dates';
 import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
+import { jointSpent, personalSpent } from '../services/spending';
+import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '../services/summary';
+import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
 
 const { Decimal } = Prisma;
+type Decimal = InstanceType<typeof Prisma.Decimal>;
 
 const SPLIT_MODES = ['proportional', 'half'] as const;
 const BUCKET_KINDS = ['savings', 'personal', 'shared_expenses', 'other'] as const;
+
+const EXPORT_TYPE_LABEL: Record<string, string> = {
+  personal: 'Personal',
+  joint: 'Conjunto',
+  movement: 'Movimiento',
+  unclassified: 'Sin clasificar',
+};
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+] as const;
 
 const createMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),
@@ -48,6 +66,129 @@ async function findMonthOr404(res: import('express').Response, id: string): Prom
   return month;
 }
 
+/** Snapshot de monthBuckets a partir de los buckets generales activos (RF2) — usado al crear
+ * un mes (POST /) y al crear el mes siguiente al cerrar (POST /:id/close). */
+function activeBucketsSnapshotData(activeBuckets: Bucket[]) {
+  return activeBuckets.map((bucket) => ({
+    bucketId: bucket.id,
+    name: bucket.name,
+    percentage: bucket.percentage,
+    splitMode: bucket.splitMode,
+    kind: bucket.kind,
+    active: bucket.active,
+  }));
+}
+
+function nextYearMonth(year: number, month: number): { year: number; month: number } {
+  return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
+}
+
+/**
+ * Calcula el summary completo de un mes (presupuesto/gastado/disponible por bolsa + ahorro
+ * real/dejar en cuenta por persona). Usado tanto por GET /:id/summary (mes abierto, en vivo)
+ * como por POST /:id/close (para congelar el snapshot en month_summaries).
+ */
+async function buildLiveSummary(month: Month) {
+  const [incomes, monthBuckets, quickEntries, transactions] = await Promise.all([
+    prisma.income.findMany({ where: { monthId: month.id } }),
+    prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
+    prisma.quickEntry.findMany({ where: { monthId: month.id } }),
+    prisma.transaction.findMany({ where: { monthId: month.id, type: { in: ['personal', 'joint'] } } }),
+  ]);
+
+  const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
+  // Gastado = quick_entries no-matched (Fase 2) + transactions personal/joint (Fase 3). Un
+  // quick_entry matched ya no cuenta aqui (countableAmount lo excluye) porque su transaction
+  // asociada si esta en esta lista — evita doble conteo (RF3/RF5).
+  const spendingEntries = [
+    ...quickEntries.map((entry) => ({
+      userId: entry.userId,
+      amount: entry.amount,
+      type: entry.type,
+      status: entry.status,
+    })),
+    ...transactions.map((tx) => ({
+      userId: tx.ownerUserId,
+      amount: tx.amount,
+      type: tx.type as 'personal' | 'joint',
+    })),
+  ];
+
+  // Acumuladores por persona/kind para el bloque de cierre (ahorro real / dejar en cuenta),
+  // aparte de las bolsas del bloque `buckets` que ya se devolvia antes de este ticket.
+  const savingsByUser = new Map<string, Decimal>();
+  const sharedByUser = new Map<string, Decimal>();
+  const personalByUser = new Map<string, Decimal>();
+  let sharedBudgetTotal = new Decimal(0);
+  let sharedSpentTotal = new Decimal(0);
+
+  const buckets = monthBuckets.map((bucket) => {
+    const budget = bucketBudget(bucket, total);
+    const contributions = incomes.map((income) => {
+      const spent = bucket.kind === 'personal' ? personalSpent(spendingEntries, income.userId) : null;
+      const amount = personContribution(bucket, budget, income.amount, total);
+
+      const byUser =
+        bucket.kind === 'savings' ? savingsByUser : bucket.kind === 'shared_expenses' ? sharedByUser : bucket.kind === 'personal' ? personalByUser : null;
+      if (byUser) {
+        byUser.set(income.userId, (byUser.get(income.userId) ?? new Decimal(0)).plus(amount));
+      }
+
+      return {
+        userId: income.userId,
+        amount: amount.toString(),
+        ...(spent ? { spent: spent.toString() } : {}),
+      };
+    });
+
+    const spent =
+      bucket.kind === 'shared_expenses'
+        ? jointSpent(spendingEntries)
+        : bucket.kind === 'personal'
+          ? incomes.reduce((sum, income) => sum.plus(personalSpent(spendingEntries, income.userId)), budget.mul(0))
+          : budget.mul(0); // 0 con la misma precision que budget (savings/other no trackean gasto)
+
+    if (bucket.kind === 'shared_expenses') {
+      sharedBudgetTotal = sharedBudgetTotal.plus(budget);
+      sharedSpentTotal = spent; // jointSpent ya es el total conjunto, no depende del bucket puntual
+    }
+
+    return {
+      id: bucket.id,
+      name: bucket.name,
+      kind: bucket.kind,
+      splitMode: bucket.splitMode,
+      percentage: bucket.percentage.toString(),
+      budget: budget.toString(),
+      spent: spent.toString(),
+      available: budget.minus(spent).toString(),
+      contributions,
+    };
+  });
+
+  const excess = sharedExpensesExcess(sharedBudgetTotal, sharedSpentTotal);
+  const perPerson = incomes.map((income) => {
+    const savingsContribution = savingsByUser.get(income.userId) ?? new Decimal(0);
+    const sharedContribution = sharedByUser.get(income.userId) ?? new Decimal(0);
+    const personalContributionAmount = personalByUser.get(income.userId) ?? new Decimal(0);
+    return {
+      userId: income.userId,
+      realSavings: realSavingsContribution(savingsContribution, income.amount, total, excess).toString(),
+      leaveInAccount: leaveInAccount(sharedContribution, personalContributionAmount).toString(),
+    };
+  });
+
+  return {
+    month: { id: month.id, year: month.year, month: month.month, status: month.status },
+    totalIncome: total.toString(),
+    buckets,
+    close: {
+      sharedExpensesExcess: excess.toString(),
+      perPerson,
+    },
+  };
+}
+
 monthsRouter.get('/', async (_req, res) => {
   const months = await prisma.month.findMany({
     orderBy: [{ year: 'desc' }, { month: 'desc' }],
@@ -84,20 +225,35 @@ monthsRouter.post('/', async (req, res) => {
     data: {
       year,
       month,
-      monthBuckets: {
-        create: activeBuckets.map((bucket) => ({
-          bucketId: bucket.id,
-          name: bucket.name,
-          percentage: bucket.percentage,
-          splitMode: bucket.splitMode,
-          kind: bucket.kind,
-          active: bucket.active,
-        })),
-      },
+      monthBuckets: { create: activeBucketsSnapshotData(activeBuckets) },
     },
     include: { monthBuckets: true },
   });
   res.status(201).json({ month: created });
+});
+
+// Comparativo mes a mes (RF7): cifras congeladas de los meses ya cerrados. Ruta literal
+// registrada antes de `/:id` para que Express no la confunda con un id de mes.
+monthsRouter.get('/comparison', async (_req, res) => {
+  const summaries = await prisma.monthSummary.findMany({
+    include: { month: true },
+    orderBy: [{ month: { year: 'desc' } }, { month: { month: 'desc' } }],
+  });
+  res.json({
+    months: summaries.map((s) => {
+      // El snapshot (s.data) ya trae su propio campo `month` (objeto id/year/month/status) --
+      // no se spreadea entero para no pisar los `year`/`month` (numeros) de este endpoint.
+      const data = s.data as { totalIncome: string; buckets: unknown[]; close: unknown };
+      return {
+        monthId: s.monthId,
+        year: s.month.year,
+        month: s.month.month,
+        totalIncome: data.totalIncome,
+        buckets: data.buckets,
+        close: data.close,
+      };
+    }),
+  });
 });
 
 monthsRouter.get('/:id', async (req, res) => {
@@ -195,33 +351,132 @@ monthsRouter.get('/:id/summary', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
 
-  const [incomes, monthBuckets] = await Promise.all([
-    prisma.income.findMany({ where: { monthId: month.id } }),
-    prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
+  if (month.status === 'closed') {
+    const frozen = await prisma.monthSummary.findUnique({ where: { monthId: month.id } });
+    if (frozen) {
+      res.json(frozen.data);
+      return;
+    }
+    // Defensivo: un mes cerrado deberia tener siempre su snapshot (lo crea POST /:id/close).
+    // Si por algun motivo no existe, se recalcula en vivo en vez de fallar.
+  }
+
+  const summary = await buildLiveSummary(month);
+  res.json(summary);
+});
+
+monthsRouter.post('/:id/close', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  if (month.status === 'closed') {
+    badRequest(res, 'month_closed', 'El mes ya esta cerrado');
+    return;
+  }
+
+  const summary = await buildLiveSummary(month);
+  // El summary se calculo con el mes todavia 'open' (findMonthOr404 lo trajo antes de cerrar);
+  // se corrige aqui para que el snapshot congelado no quede con un status desactualizado.
+  summary.month.status = 'closed';
+  const next = nextYearMonth(month.year, month.month);
+  const activeBuckets = await prisma.bucket.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+
+  const closedMonth = await prisma.$transaction(async (tx) => {
+    const updated = await tx.month.update({
+      where: { id: month.id },
+      data: { status: 'closed', closedAt: new Date() },
+    });
+    await tx.monthSummary.upsert({
+      where: { monthId: month.id },
+      create: { monthId: month.id, data: summary as unknown as Prisma.InputJsonValue },
+      update: { data: summary as unknown as Prisma.InputJsonValue },
+    });
+
+    const existingNext = await tx.month.findUnique({ where: { year_month: next } });
+    if (!existingNext) {
+      await tx.month.create({
+        data: {
+          year: next.year,
+          month: next.month,
+          monthBuckets: { create: activeBucketsSnapshotData(activeBuckets) },
+        },
+      });
+    }
+
+    return updated;
+  });
+
+  res.json({ month: closedMonth, summary });
+});
+
+monthsRouter.post('/:id/reopen', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  if (month.status === 'open') {
+    badRequest(res, 'month_open', 'El mes ya esta abierto');
+    return;
+  }
+
+  const reopened = await prisma.month.update({
+    where: { id: month.id },
+    data: { status: 'open', closedAt: null },
+  });
+  res.json({ month: reopened });
+});
+
+monthsRouter.get('/:id/export', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+
+  type SummaryData = Awaited<ReturnType<typeof buildLiveSummary>>;
+  let summary: SummaryData;
+  if (month.status === 'closed') {
+    const frozen = await prisma.monthSummary.findUnique({ where: { monthId: month.id } });
+    summary = frozen ? (frozen.data as unknown as SummaryData) : await buildLiveSummary(month);
+  } else {
+    summary = await buildLiveSummary(month);
+  }
+
+  const [users, transactions] = await Promise.all([
+    prisma.user.findMany(),
+    prisma.transaction.findMany({
+      where: { monthId: month.id },
+      include: { owner: true, category: true },
+      orderBy: { date: 'asc' },
+    }),
   ]);
+  const userName = (userId: string) => users.find((u) => u.id === userId)?.name ?? userId;
 
-  const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
-
-  const buckets = monthBuckets.map((bucket) => {
-    const budget = bucketBudget(bucket, total);
-    const contributions = incomes.map((income) => ({
-      userId: income.userId,
-      amount: personContribution(bucket, budget, income.amount, total).toString(),
-    }));
-    return {
-      id: bucket.id,
+  const workbook = buildMonthExportWorkbook({
+    monthLabel: `${MESES[month.month - 1]} ${month.year}`,
+    totalIncome: summary.totalIncome,
+    buckets: summary.buckets.map((bucket) => ({
       name: bucket.name,
-      kind: bucket.kind,
-      splitMode: bucket.splitMode,
-      percentage: bucket.percentage.toString(),
-      budget: budget.toString(),
-      contributions,
-    };
+      percentage: bucket.percentage,
+      budget: bucket.budget,
+      spent: bucket.spent,
+      available: bucket.available,
+      contributions: bucket.contributions.map((c) => ({ userName: userName(c.userId), amount: c.amount })),
+    })),
+    sharedExpensesExcess: summary.close.sharedExpensesExcess,
+    perPersonClose: summary.close.perPerson.map((p) => ({
+      userName: userName(p.userId),
+      realSavings: p.realSavings,
+      leaveInAccount: p.leaveInAccount,
+    })),
+    transactions: transactions.map((tx) => ({
+      date: toDateOnly(tx.date),
+      ownerName: tx.owner.name,
+      bankDescription: tx.bankDescription,
+      detail: tx.detail,
+      typeLabel: EXPORT_TYPE_LABEL[tx.type] ?? tx.type,
+      categoryName: tx.category?.name ?? null,
+      amount: tx.amount.toString(),
+    })),
   });
 
-  res.json({
-    month: { id: month.id, year: month.year, month: month.month, status: month.status },
-    totalIncome: total.toString(),
-    buckets,
-  });
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  const filename = `finanzas-${month.year}-${String(month.month).padStart(2, '0')}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
 });
