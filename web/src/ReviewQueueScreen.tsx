@@ -3,6 +3,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import {
   acceptRuleSuggestion,
   fetchCategories,
+  fetchCurrentUser,
   fetchMatchCandidates,
   fetchMonths,
   fetchRuleSuggestions,
@@ -25,6 +26,13 @@ export default function ReviewQueueScreen() {
   const [monthId, setMonthId] = useState<string | undefined>(undefined);
   const selectedMonthId = monthId ?? openMonth?.id;
 
+  const { data: currentUser } = useQuery({ queryKey: ['auth', 'me'], queryFn: fetchCurrentUser });
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
+  const otherUser = users?.find((u) => u.id !== currentUser?.id);
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
+  const selectedOwnerFilter = ownerFilter ?? currentUser?.id;
+  const ownerUserId = selectedOwnerFilter === 'all' ? undefined : selectedOwnerFilter;
+
   return (
     <div className="min-h-screen bg-cream">
       <NavBar />
@@ -44,6 +52,40 @@ export default function ReviewQueueScreen() {
           </select>
         </div>
 
+        {currentUser && (
+          <div className="flex gap-2 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setOwnerFilter(currentUser.id)}
+              className={`rounded-full px-3 py-1.5 ${
+                selectedOwnerFilter === currentUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+              }`}
+            >
+              Yo
+            </button>
+            {otherUser && (
+              <button
+                type="button"
+                onClick={() => setOwnerFilter(otherUser.id)}
+                className={`rounded-full px-3 py-1.5 ${
+                  selectedOwnerFilter === otherUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+                }`}
+              >
+                {otherUser.name}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setOwnerFilter('all')}
+              className={`rounded-full px-3 py-1.5 ${
+                selectedOwnerFilter === 'all' ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+              }`}
+            >
+              Ambos
+            </button>
+          </div>
+        )}
+
         {months && months.length === 0 && (
           <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">
             Todavia no hay meses creados — crea uno desde el Dashboard.
@@ -53,8 +95,8 @@ export default function ReviewQueueScreen() {
         {selectedMonthId && (
           <>
             <LearningBanner monthId={selectedMonthId} />
-            <MatchCandidatesSection monthId={selectedMonthId} />
-            <ReviewQueueList monthId={selectedMonthId} />
+            <MatchCandidatesSection monthId={selectedMonthId} ownerUserId={ownerUserId} />
+            <ReviewQueueList monthId={selectedMonthId} ownerUserId={ownerUserId} />
           </>
         )}
       </div>
@@ -109,11 +151,11 @@ function LearningBanner({ monthId }: { monthId: string }) {
   );
 }
 
-function MatchCandidatesSection({ monthId }: { monthId: string }) {
+function MatchCandidatesSection({ monthId, ownerUserId }: { monthId: string; ownerUserId?: string }) {
   const queryClient = useQueryClient();
   const { data: pendingReview } = useQuery({
-    queryKey: ['transactions', monthId, { needsReview: true }],
-    queryFn: () => fetchTransactions({ monthId, needsReview: true }),
+    queryKey: ['transactions', monthId, { needsReview: true, ownerUserId }],
+    queryFn: () => fetchTransactions({ monthId, needsReview: true, ownerUserId }),
   });
 
   const candidateQueries = useQueries({
@@ -175,14 +217,23 @@ function MatchCandidatesSection({ monthId }: { monthId: string }) {
   );
 }
 
-function ReviewQueueList({ monthId }: { monthId: string }) {
+function ReviewQueueList({ monthId, ownerUserId }: { monthId: string; ownerUserId?: string }) {
   const queryClient = useQueryClient();
   const { data: transactions } = useQuery({
-    queryKey: ['transactions', monthId, { needsReview: true }],
-    queryFn: () => fetchTransactions({ monthId, needsReview: true }),
+    queryKey: ['transactions', monthId, { needsReview: true, ownerUserId }],
+    queryFn: () => fetchTransactions({ monthId, needsReview: true, ownerUserId }),
   });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
+
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showToast(type: RuleSetType) {
+    setToast(`Marcada como ${TYPE_LABEL[type]}`);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 2200);
+  }
 
   const updateMutation = useMutation({
     mutationFn: (input: { id: string; type: RuleSetType; categoryId: string | null; detail: string | null }) =>
@@ -202,15 +253,28 @@ function ReviewQueueList({ monthId }: { monthId: string }) {
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-xs font-bold uppercase tracking-wide text-ink-muted">{transactions.length} pendientes</h2>
-      {transactions.map((tx) => (
+      {transactions.map((tx, i) => (
         <ReviewCard
-          key={tx.id}
+          // La tarjeta que pasa a ser la primera de la cola cambia de key (top-<id> vs <id>) para
+          // forzar un remount y que la animacion de entrada se note — sin esto, React reutiliza el
+          // mismo nodo DOM y la siguiente transaccion aparece de golpe (motivo del ticket #23).
+          key={i === 0 ? `top-${tx.id}` : tx.id}
           transaction={tx}
           categories={categories ?? []}
           ownerName={users?.find((u) => u.id === tx.ownerUserId)?.name}
-          onClassify={(type, categoryId, detail) => updateMutation.mutate({ id: tx.id, type, categoryId, detail })}
+          onClassify={(type, categoryId, detail) => {
+            showToast(type);
+            updateMutation.mutate({ id: tx.id, type, categoryId, detail });
+          }}
         />
       ))}
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <div className="animate-toast-in rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white shadow-lg">
+            {toast}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -271,7 +335,7 @@ function ReviewCard({
 
   return (
     <div
-      className="rounded-2xl border border-line bg-white p-5 shadow-sm"
+      className="animate-card-in rounded-2xl border border-line bg-white p-5 shadow-sm"
       style={{
         touchAction: 'pan-y',
         transform: dragX ? `translateX(${dragX}px) rotate(${dragX / 30}deg)` : undefined,

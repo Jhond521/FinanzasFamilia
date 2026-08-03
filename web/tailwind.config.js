@@ -8,6 +8,20 @@ export default {
       fontFamily: {
         sans: ['Manrope', ...defaultTheme.fontFamily.sans],
       },
+      keyframes: {
+        'card-in': {
+          '0%': { opacity: '0', transform: 'translateY(12px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'toast-in': {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'card-in': 'card-in 0.25s ease-out',
+        'toast-in': 'toast-in 0.2s ease-out',
+      },
       colors: {
         // Paleta tomada de design_specs/Finanzas en Pareja.dc.html (valores OKLCH del mock).
         cream: {
