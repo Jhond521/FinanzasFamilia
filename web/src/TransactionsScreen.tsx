@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchCategories,
+  fetchCurrentUser,
   fetchMonths,
   fetchTransactions,
   fetchUsers,
@@ -38,6 +39,7 @@ export default function TransactionsScreen() {
   const { data: months } = useQuery({ queryKey: ['months'], queryFn: fetchMonths });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
+  const { data: currentUser } = useQuery({ queryKey: ['auth', 'me'], queryFn: fetchCurrentUser });
 
   const openMonth = months?.find((m) => m.status === 'open') ?? months?.[0];
   const [monthId, setMonthId] = useState<string | undefined>(undefined);
@@ -46,13 +48,19 @@ export default function TransactionsScreen() {
   const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all');
   const [search, setSearch] = useState('');
 
+  const otherUser = users?.find((u) => u.id !== currentUser?.id);
+  const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
+  const selectedOwnerFilter = ownerFilter ?? currentUser?.id;
+  const ownerUserId = selectedOwnerFilter === 'all' ? undefined : selectedOwnerFilter;
+
   const { data: transactions } = useQuery({
-    queryKey: ['transactions', selectedMonthId, { type: typeFilter, q: search }],
+    queryKey: ['transactions', selectedMonthId, { type: typeFilter, q: search, ownerUserId }],
     queryFn: () =>
       fetchTransactions({
         monthId: selectedMonthId!,
         type: typeFilter === 'all' ? undefined : typeFilter,
         q: search || undefined,
+        ownerUserId,
       }),
     enabled: Boolean(selectedMonthId),
   });
@@ -116,6 +124,40 @@ export default function TransactionsScreen() {
             className="ml-auto rounded-lg border border-line px-3 py-2 text-sm"
           />
         </div>
+
+        {currentUser && (
+          <div className="flex gap-2 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setOwnerFilter(currentUser.id)}
+              className={`rounded-full px-3 py-1.5 ${
+                selectedOwnerFilter === currentUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+              }`}
+            >
+              Yo
+            </button>
+            {otherUser && (
+              <button
+                type="button"
+                onClick={() => setOwnerFilter(otherUser.id)}
+                className={`rounded-full px-3 py-1.5 ${
+                  selectedOwnerFilter === otherUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+                }`}
+              >
+                {otherUser.name}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setOwnerFilter('all')}
+              className={`rounded-full px-3 py-1.5 ${
+                selectedOwnerFilter === 'all' ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+              }`}
+            >
+              Ambos
+            </button>
+          </div>
+        )}
 
         <div className="overflow-x-auto rounded-2xl border border-line bg-white">
           <table className="w-full min-w-[720px] text-sm">
