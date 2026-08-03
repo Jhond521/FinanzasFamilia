@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   closeMonth,
@@ -32,6 +32,13 @@ const BUCKET_KIND_LABEL: Record<string, string> = {
   shared_expenses: 'Gasto conjunto',
   other: 'Otro',
 };
+
+/** True si el mes calendario (year/month, 1-indexado) ya termino -- hoy cayo en el primer dia del
+ * mes siguiente o despues (ticket #33: no se debe poder cerrar un mes que sigue en curso). */
+function monthHasEnded(year: number, month: number): boolean {
+  const firstDayNextMonth = new Date(year, month, 1);
+  return new Date() >= firstDayNextMonth;
+}
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -282,7 +289,7 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
         </div>
       </section>
 
-      {currentUser && <OpeningReconciliationSection monthId={monthId} currentUser={currentUser} />}
+      {currentUser && <OpeningReconciliationSection monthId={monthId} currentUser={currentUser} users={users} />}
 
       {detail && (
         <MonthBucketsPanel
@@ -359,7 +366,7 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
               </div>
             ))}
           </div>
-          <div className="mt-5 flex justify-end">
+          <div className="mt-5 flex flex-col items-end gap-2">
             {isClosed ? (
               <button
                 type="button"
@@ -370,14 +377,21 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                 Reabrir mes
               </button>
             ) : (
-              <button
-                type="button"
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
-                onClick={() => closeMonthMutation.mutate()}
-                disabled={closeMonthMutation.isPending}
-              >
-                Cerrar mes
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+                  onClick={() => closeMonthMutation.mutate()}
+                  disabled={closeMonthMutation.isPending || !monthHasEnded(summary.month.year, summary.month.month)}
+                >
+                  Cerrar mes
+                </button>
+                {!monthHasEnded(summary.month.year, summary.month.month) && (
+                  <p className="text-xs text-white/60">
+                    Se habilita cuando termine {MESES[summary.month.month - 1]} {summary.month.year}.
+                  </p>
+                )}
+              </>
             )}
           </div>
         </section>
@@ -491,7 +505,15 @@ function MonthBucketsPanel({
 
 // ---- Cuadre de Inicio (ticket #29) ----
 
-function OpeningReconciliationSection({ monthId, currentUser }: { monthId: string; currentUser: CurrentUser }) {
+function OpeningReconciliationSection({
+  monthId,
+  currentUser,
+  users,
+}: {
+  monthId: string;
+  currentUser: CurrentUser;
+  users: { id: string; name: string }[];
+}) {
   const queryClient = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [confirmingRedo, setConfirmingRedo] = useState(false);
@@ -501,6 +523,16 @@ function OpeningReconciliationSection({ monthId, currentUser }: { monthId: strin
     queryKey: latestQueryKey,
     queryFn: () => fetchLatestOpeningReconciliation(monthId, currentUser.id),
   });
+
+  // Estado por persona (John/Lina) para mostrar los checks -- separado del query de arriba, que es
+  // solo del usuario actual y maneja la logica de abrir el wizard / ofrecer repetir (ticket #33).
+  const perPersonQueries = useQueries({
+    queries: users.map((user) => ({
+      queryKey: ['months', monthId, 'opening-reconciliation', 'latest', user.id],
+      queryFn: () => fetchLatestOpeningReconciliation(monthId, user.id),
+    })),
+  });
+  const allDone = users.length > 0 && perPersonQueries.every((q) => Boolean(q.data));
 
   function handleButtonClick() {
     if (latest) {
@@ -529,6 +561,27 @@ function OpeningReconciliationSection({ monthId, currentUser }: { monthId: strin
           Cuadre de Inicio
         </button>
       </div>
+
+      {users.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          {users.map((user, i) => {
+            const record = perPersonQueries[i]?.data;
+            return (
+              <span
+                key={user.id}
+                className={`flex items-center gap-1 ${record ? 'text-success' : 'text-ink-faint'}`}
+              >
+                <span aria-hidden="true">{record ? '✓' : '○'}</span>
+                <span>
+                  {user.name}
+                  {record ? ` · ${new Date(record.createdAt).toLocaleDateString('es-CO')}` : ' · pendiente'}
+                </span>
+              </span>
+            );
+          })}
+          {allDone && <span className="font-semibold text-success">Cuadre completo</span>}
+        </div>
+      )}
 
       {confirmingRedo && latest && (
         <div className="mt-3 rounded-lg bg-warning-light p-3 text-sm text-warning">
