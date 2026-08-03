@@ -307,7 +307,6 @@ function ReviewCard({
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     dragState.current = { startX: e.clientX, startY: e.clientY, horizontal: false };
-    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -317,6 +316,11 @@ function ReviewCard({
     const dy = e.clientY - state.startY;
     if (!state.horizontal && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
       state.horizontal = true;
+      // Capturar el pointer recien aqui, solo cuando ya es un swipe confirmado (#28): si se captura
+      // desde pointerdown, un tap simple sobre un boton hijo (categoria, tipo) nunca dispara su
+      // evento click en navegadores que re-dirigen pointerup/click al elemento que capturo el pointer
+      // (Safari iOS, el target movil principal de esta app).
+      e.currentTarget.setPointerCapture(e.pointerId);
     }
     if (state.horizontal) {
       setDragX(dx);
