@@ -32,8 +32,11 @@ const updateRuleSchema = z.object({
 const acceptSuggestionSchema = z.object({
   pattern: z.string().trim().min(1),
   setType: z.enum(RULE_SET_TYPES),
-  setCategoryId: z.string().uuid().optional(),
-  setDetail: z.string().trim().min(1).optional(),
+  // GET /rules/suggestions siempre manda estos dos campos, con null cuando la transaccion no
+  // tenia categoria/detalle (docs/03-api.md) — nullable() ademas de optional(), igual que
+  // updateRuleSchema, o zod rechaza el null con invalid_body y el POST falla en silencio.
+  setCategoryId: z.string().uuid().nullable().optional(),
+  setDetail: z.string().trim().min(1).nullable().optional(),
   mode: z.enum(RULE_MODES).optional().default('auto'),
   monthId: z.string().uuid().optional(),
 });

@@ -88,6 +88,11 @@ function LearningBanner({ monthId }: { monthId: string }) {
     <div className="rounded-xl bg-brand-light p-4 text-sm text-brand">
       Has marcado <b>&quot;{suggestion.pattern}&quot;</b> como {TYPE_LABEL[suggestion.setType]} {suggestion.count} veces.
       ¿Creo la regla?
+      {acceptMutation.isError && (
+        <p className="mt-2 font-semibold text-danger">
+          {acceptMutation.error instanceof Error ? acceptMutation.error.message : 'No se pudo crear la regla'}
+        </p>
+      )}
       <div className="mt-2 flex gap-4 font-bold">
         <button type="button" onClick={() => acceptMutation.mutate({ ...suggestion, monthId })}>
           Si, crear
