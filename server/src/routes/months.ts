@@ -7,6 +7,12 @@ import { toDateOnly } from '../lib/dates';
 import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
 import { jointSpent, personalSpent } from '../services/spending';
 import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '../services/summary';
+import {
+  accountBalanceMatches,
+  expensesToDate,
+  leaveInAccountAtOpening,
+  moveToSavingsFromBalance,
+} from '../services/openingReconciliation';
 import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
@@ -52,6 +58,14 @@ const monthBucketsSchema = z.array(
     active: z.boolean(),
   }),
 );
+
+const openingReconciliationCreateSchema = z.object({
+  userId: z.string().uuid().optional(),
+  // Saldo antes de hacer la transferencia -- se usa para calcular cuanto mover a Nu (ticket #31).
+  accountBalance: z.union([z.string(), z.number()]),
+  // Saldo despues de hacer la transferencia -- se compara contra "dejar en cuenta" para el match.
+  confirmedBalance: z.union([z.string(), z.number()]),
+});
 
 function badRequest(res: import('express').Response, code: string, message: string): void {
   res.status(400).json({ error: { code, message } });
@@ -479,4 +493,138 @@ monthsRouter.get('/:id/export', async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);
+});
+
+// ---- Cuadre de Inicio (ticket #29, formula corregida en #31) ----
+
+/**
+ * Cifras del Cuadre de Inicio para una persona: aporte del mes a Gastos del Mes/Ahorros
+ * Conjuntos/Dinero Personal (via el mismo summary que ya usa el dashboard, solo informativo) +
+ * lo que ya salio de su cuenta este mes (todas sus transactions, clasificadas o no -- solo se
+ * excluye 'movement', ver notas tecnicas del ticket #31). "Mover a Nu" se calcula contra el
+ * saldo actual que digita el usuario, para que el cuadre de exacto sin importar remanentes de
+ * meses anteriores ni el gap estructural de un bucket 'mitad_y_mitad' con ingresos desiguales.
+ */
+async function computeOpeningNumbers(month: Month, userId: string, accountBalance: string | number | Decimal) {
+  const summary = await buildLiveSummary(month);
+  const contributionByKind = (kind: string) =>
+    summary.buckets
+      .filter((bucket) => bucket.kind === kind)
+      .reduce(
+        (sum, bucket) => sum.plus(new Decimal(bucket.contributions.find((c) => c.userId === userId)?.amount ?? '0')),
+        new Decimal(0),
+      );
+
+  const totalSharedExpenses = contributionByKind('shared_expenses');
+  const totalSavings = contributionByKind('savings');
+  const totalPersonal = contributionByKind('personal');
+
+  const ownedTransactions = await prisma.transaction.findMany({
+    where: { monthId: month.id, ownerUserId: userId, type: { not: 'movement' } },
+  });
+  const expensesToDateAmount = expensesToDate(
+    ownedTransactions.map((tx) => ({ amount: tx.amount, type: tx.type as 'personal' | 'joint' | 'unclassified' })),
+  );
+
+  const leaveInAccount = leaveInAccountAtOpening(totalSharedExpenses, totalPersonal, expensesToDateAmount);
+
+  return {
+    totalSharedExpenses,
+    totalSavings,
+    totalPersonal,
+    expensesToDateAmount,
+    leaveInAccount,
+    moveToSavings: moveToSavingsFromBalance(accountBalance, leaveInAccount),
+  };
+}
+
+monthsRouter.get('/:id/opening-reconciliation/preview', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+  const { accountBalance } = req.query;
+  if (typeof accountBalance !== 'string' || !accountBalance) {
+    badRequest(res, 'invalid_query', 'accountBalance es requerido');
+    return;
+  }
+
+  const numbers = await computeOpeningNumbers(month, userId, accountBalance);
+  res.json({
+    userId,
+    totalSharedExpenses: numbers.totalSharedExpenses.toString(),
+    totalSavings: numbers.totalSavings.toString(),
+    totalPersonal: numbers.totalPersonal.toString(),
+    expensesToDate: numbers.expensesToDateAmount.toString(),
+    leaveInAccount: numbers.leaveInAccount.toString(),
+    moveToSavings: numbers.moveToSavings.toString(),
+  });
+});
+
+monthsRouter.get('/:id/opening-reconciliation/latest', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+
+  const latest = await prisma.openingReconciliation.findFirst({
+    where: { monthId: month.id, userId },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({
+    openingReconciliation: latest
+      ? {
+          id: latest.id,
+          monthId: latest.monthId,
+          userId: latest.userId,
+          accountBalance: latest.accountBalance.toString(),
+          expensesToDate: latest.expensesToDate.toString(),
+          leaveInAccount: latest.leaveInAccount.toString(),
+          moveToSavings: latest.moveToSavings.toString(),
+          matched: latest.matched,
+          createdAt: latest.createdAt,
+        }
+      : null,
+  });
+});
+
+monthsRouter.post('/:id/opening-reconciliation', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+
+  const parsed = openingReconciliationCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'invalid_body', parsed.error.message);
+    return;
+  }
+  const userId = parsed.data.userId ?? req.user!.id;
+  const confirmedBalance = new Decimal(parsed.data.confirmedBalance);
+
+  const numbers = await computeOpeningNumbers(month, userId, parsed.data.accountBalance);
+  const matched = accountBalanceMatches(confirmedBalance, numbers.leaveInAccount);
+
+  const created = await prisma.openingReconciliation.create({
+    data: {
+      monthId: month.id,
+      userId,
+      accountBalance: confirmedBalance,
+      expensesToDate: numbers.expensesToDateAmount,
+      leaveInAccount: numbers.leaveInAccount,
+      moveToSavings: numbers.moveToSavings,
+      matched,
+    },
+  });
+
+  res.status(201).json({
+    openingReconciliation: {
+      id: created.id,
+      monthId: created.monthId,
+      userId: created.userId,
+      accountBalance: created.accountBalance.toString(),
+      expensesToDate: created.expensesToDate.toString(),
+      leaveInAccount: created.leaveInAccount.toString(),
+      moveToSavings: created.moveToSavings.toString(),
+      matched: created.matched,
+      createdAt: created.createdAt,
+    },
+    diff: confirmedBalance.minus(numbers.leaveInAccount).toString(),
+  });
 });

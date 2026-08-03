@@ -3,18 +3,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   closeMonth,
+  confirmOpeningReconciliation,
   createMonth,
   downloadMonthExport,
+  fetchCurrentUser,
+  fetchLatestOpeningReconciliation,
   fetchMonthComparison,
   fetchMonthDetail,
   fetchMonthSummary,
   fetchMonths,
+  fetchOpeningReconciliationPreview,
   fetchQuickEntries,
   fetchTransactions,
   fetchUsers,
   reopenMonth,
   replaceMonthBuckets,
   replaceMonthIncomes,
+  type CurrentUser,
   type MonthDetail,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
@@ -152,6 +157,7 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
     queryKey: ['months', monthId, 'summary'],
     queryFn: () => fetchMonthSummary(monthId),
   });
+  const { data: currentUser } = useQuery({ queryKey: ['auth', 'me'], queryFn: fetchCurrentUser });
 
   const [amounts, setAmounts] = useState<Record<string, string>>({});
 
@@ -275,6 +281,8 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           </button>
         </div>
       </section>
+
+      {currentUser && <OpeningReconciliationSection monthId={monthId} currentUser={currentUser} />}
 
       {detail && (
         <MonthBucketsPanel
@@ -478,6 +486,340 @@ function MonthBucketsPanel({
         </div>
       )}
     </section>
+  );
+}
+
+// ---- Cuadre de Inicio (ticket #29) ----
+
+function OpeningReconciliationSection({ monthId, currentUser }: { monthId: string; currentUser: CurrentUser }) {
+  const queryClient = useQueryClient();
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [confirmingRedo, setConfirmingRedo] = useState(false);
+
+  const latestQueryKey = ['months', monthId, 'opening-reconciliation', 'latest', currentUser.id];
+  const { data: latest } = useQuery({
+    queryKey: latestQueryKey,
+    queryFn: () => fetchLatestOpeningReconciliation(monthId, currentUser.id),
+  });
+
+  function handleButtonClick() {
+    if (latest) {
+      setConfirmingRedo(true);
+      return;
+    }
+    setWizardOpen(true);
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-medium text-ink-muted">Cuadre de Inicio</h2>
+          {latest && (
+            <p className="mt-1 text-xs text-ink-faint">
+              Cuadre de inicio realizado en {new Date(latest.createdAt).toLocaleDateString('es-CO')}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleButtonClick}
+          className="shrink-0 rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink-soft hover:border-brand hover:text-brand"
+        >
+          Cuadre de Inicio
+        </button>
+      </div>
+
+      {confirmingRedo && latest && (
+        <div className="mt-3 rounded-lg bg-warning-light p-3 text-sm text-warning">
+          <p>El cuadre ya se hizo el {new Date(latest.createdAt).toLocaleDateString('es-CO')}. ¿Deseas repetirlo?</p>
+          <div className="mt-2 flex justify-end gap-3">
+            <button type="button" onClick={() => setConfirmingRedo(false)} className="text-ink-muted">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="font-semibold text-brand"
+              onClick={() => {
+                setConfirmingRedo(false);
+                setWizardOpen(true);
+              }}
+            >
+              Sí, repetir
+            </button>
+          </div>
+        </div>
+      )}
+
+      {wizardOpen && (
+        <OpeningReconciliationWizard
+          monthId={monthId}
+          currentUser={currentUser}
+          onClose={() => setWizardOpen(false)}
+          onDone={async () => {
+            setWizardOpen(false);
+            await queryClient.invalidateQueries({ queryKey: latestQueryKey });
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+type WizardStep = 'check' | 'balance' | 'breakdown' | 'confirm' | 'success' | 'mismatch';
+
+function OpeningReconciliationWizard({
+  monthId,
+  currentUser,
+  onClose,
+  onDone,
+}: {
+  monthId: string;
+  currentUser: CurrentUser;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<WizardStep>('check');
+  const [upToDateAnswer, setUpToDateAnswer] = useState<boolean | null>(null);
+  const [initialBalance, setInitialBalance] = useState('');
+  const [confirmedBalance, setConfirmedBalance] = useState('');
+
+  const { data: transactions, isLoading: loadingTransactions } = useQuery({
+    queryKey: ['transactions', monthId, { ownerUserId: currentUser.id }],
+    queryFn: () => fetchTransactions({ monthId, ownerUserId: currentUser.id }),
+  });
+  const hasTransactions = Boolean(transactions?.length);
+  const blocked = !loadingTransactions && (!hasTransactions || upToDateAnswer === false);
+
+  const { data: preview } = useQuery({
+    queryKey: ['months', monthId, 'opening-reconciliation', 'preview', currentUser.id, initialBalance],
+    queryFn: () => fetchOpeningReconciliationPreview(monthId, currentUser.id, initialBalance),
+    enabled: (step === 'breakdown' || step === 'confirm') && Boolean(initialBalance),
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: () =>
+      confirmOpeningReconciliation(monthId, {
+        userId: currentUser.id,
+        accountBalance: initialBalance,
+        confirmedBalance,
+      }),
+    onSuccess: (data) => {
+      setStep(data.openingReconciliation.matched ? 'success' : 'mismatch');
+    },
+  });
+
+  const result = confirmMutation.data;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="w-full max-w-sm rounded-t-2xl bg-white p-4 shadow-lg sm:rounded-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-ink">Cuadre de Inicio</h3>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-ink-faint hover:text-ink">
+            ✕
+          </button>
+        </div>
+
+        {step === 'check' &&
+          (loadingTransactions ? (
+            <p className="text-sm text-ink-muted">Verificando transacciones del mes…</p>
+          ) : blocked ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-ink-soft">
+                {!hasTransactions
+                  ? 'Todavía no hay transacciones importadas para este mes.'
+                  : 'Para hacer el cuadre necesitamos el extracto al día.'}
+              </p>
+              <p className="text-sm text-ink-muted">
+                Descarga un archivo con las transacciones hasta este momento, impórtalo, y recuerda anotar el saldo
+                exacto de tu cuenta antes de continuar.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                  Cerrar
+                </button>
+                <Link
+                  to="/importar"
+                  onClick={onClose}
+                  className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                >
+                  Ir a importar
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-ink-soft">
+                Ya existen transacciones para este mes. ¿Corresponden a todas las transacciones al día de hoy?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUpToDateAnswer(false)}
+                  className="rounded-lg border border-line px-3 py-2 text-sm text-ink-soft"
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep('balance')}
+                  className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                >
+                  Sí, continuar
+                </button>
+              </div>
+            </div>
+          ))}
+
+        {step === 'balance' && (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-ink-soft">Saldo actual en cuenta Bancolombia</span>
+              <CurrencyInput value={initialBalance} onChange={setInitialBalance} autoFocus />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!initialBalance}
+                onClick={() => setStep('breakdown')}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'breakdown' &&
+          (preview ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Total Gastos</span>
+                  <span className="font-medium text-ink">{formatCOP(preview.totalSharedExpenses)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Aporte presupuestado a Ahorros Conjuntos</span>
+                  <span className="font-medium text-ink">{formatCOP(preview.totalSavings)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Total Ahorros Personales</span>
+                  <span className="font-medium text-ink">{formatCOP(preview.totalPersonal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Gastos a la fecha</span>
+                  <span className="font-medium text-ink">{formatCOP(preview.expensesToDate)}</span>
+                </div>
+              </div>
+              <div className="rounded-lg bg-ink p-3 text-white">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/70">Dejar en cuenta</span>
+                  <span className="font-bold">{formatCOP(preview.leaveInAccount)}</span>
+                </div>
+                <div className="mt-1 flex justify-between text-sm">
+                  <span className="text-white/70">Mover a Nu</span>
+                  <span className="font-bold">{formatCOP(preview.moveToSavings)}</span>
+                </div>
+              </div>
+              <p className="text-xs text-ink-faint">
+                "Mover a Nu" puede ser mayor al aporte presupuestado a Ahorros Conjuntos si queda saldo de meses
+                anteriores en la cuenta — ese sobrante se termina de repartir en el cuadre de cierre. Haz la
+                transferencia por el valor exacto a mover a Nu y luego confirma el nuevo saldo.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep('confirm')}
+                  className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                >
+                  Ya hice la transferencia
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">Calculando…</p>
+          ))}
+
+        {step === 'confirm' && (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-ink-soft">Nuevo saldo en cuenta tras la transferencia</span>
+              <CurrencyInput value={confirmedBalance} onChange={setConfirmedBalance} autoFocus />
+            </label>
+            {confirmMutation.isError && (
+              <p className="text-sm text-danger">
+                {confirmMutation.error instanceof Error ? confirmMutation.error.message : 'No se pudo confirmar el cuadre'}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!confirmedBalance || confirmMutation.isPending}
+                onClick={() => confirmMutation.mutate()}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                {confirmMutation.isPending ? 'Confirmando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'success' && result && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-semibold text-success">Cuadre de Inicio completado con éxito.</p>
+            <p className="text-sm text-ink-soft">
+              Para dividir lo que hay en Nu entre personal y conjunto (Cajitas), ejecuta el cierre del mes anterior.
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onDone}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+              >
+                Listo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'mismatch' && result && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-semibold text-danger">El saldo no coincide.</p>
+            <p className="text-sm text-ink-soft">
+              Esperábamos {formatCOP(result.openingReconciliation.leaveInAccount)} y anotaste{' '}
+              {formatCOP(result.openingReconciliation.accountBalance)} (diferencia de{' '}
+              {formatCOP(String(Math.abs(Number(result.diff))))}).
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Link
+                to="/transacciones"
+                onClick={onClose}
+                className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink-soft"
+              >
+                Revisar transacciones
+              </Link>
+              <button
+                type="button"
+                onClick={() => setStep('confirm')}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+              >
+                Corregir saldo
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
