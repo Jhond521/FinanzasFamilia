@@ -6,6 +6,7 @@ import {
   confirmOpeningReconciliation,
   createMonth,
   downloadMonthExport,
+  fetchAppSettings,
   fetchCloseCheck,
   fetchClosePreview,
   fetchCurrentUser,
@@ -488,7 +489,8 @@ function MonthClosureSection({
 
 // ---- Wizard de cierre refinado (ticket #36) ----
 
-const YIELD_AUTO_THRESHOLD = 200000;
+/** Usado solo mientras carga el umbral configurado (Configuracion) -- ver fetchAppSettings. */
+const YIELD_AUTO_THRESHOLD_FALLBACK = 200000;
 
 type CloseWizardStep = 'check' | 'blocked' | 'nuBalance' | 'bigExpense' | 'breakdown' | 'finalBalance' | 'result';
 
@@ -546,6 +548,13 @@ function MonthClosureWizard({
     enabled: step === 'finalBalance' || step === 'result',
   });
 
+  const { data: appSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: fetchAppSettings,
+    enabled: step === 'finalBalance' || step === 'result',
+  });
+  const yieldThreshold = appSettings ? Number(appSettings.yieldAutoThreshold) : YIELD_AUTO_THRESHOLD_FALLBACK;
+
   const bigExpenseValue = hasBigExpense ? Number(bigExpenseAmount || '0') : 0;
   const netSavings = preview ? Number(preview.monthlySavingsBudget) - bigExpenseValue : undefined;
   const adjustment = preview ? Number(preview.adjustment) : undefined;
@@ -553,7 +562,7 @@ function MonthClosureWizard({
   const calculatedBalance =
     netSavings !== undefined && adjustment !== undefined ? balanceSoFar + netSavings + adjustment : undefined;
   const diff = calculatedBalance !== undefined && finalBalance ? Number(finalBalance) - calculatedBalance : undefined;
-  const suggestsYield = diff !== undefined && diff > 0 && diff <= YIELD_AUTO_THRESHOLD;
+  const suggestsYield = diff !== undefined && diff > 0 && diff <= yieldThreshold;
 
   const closeMineMutation = useMutation({
     mutationFn: () =>

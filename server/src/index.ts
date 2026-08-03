@@ -15,6 +15,7 @@ import { importsRouter, skippedDuplicatesRouter } from './routes/imports';
 import { monthsRouter } from './routes/months';
 import { quickEntriesRouter } from './routes/quickEntries';
 import { rulesRouter } from './routes/rules';
+import { settingsRouter } from './routes/settings';
 import { transactionsRouter } from './routes/transactions';
 import { usersRouter } from './routes/users';
 
@@ -82,6 +83,7 @@ app.use('/api/skipped-duplicates', requireAuth, skippedDuplicatesRouter);
 app.use('/api/months', requireAuth, monthsRouter);
 app.use('/api/quick-entries', requireAuth, quickEntriesRouter);
 app.use('/api/rules', requireAuth, rulesRouter);
+app.use('/api/settings', requireAuth, settingsRouter);
 app.use('/api/transactions', requireAuth, transactionsRouter);
 app.use('/api/users', requireAuth, usersRouter);
 

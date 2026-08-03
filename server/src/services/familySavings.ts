@@ -4,7 +4,9 @@ const { Decimal } = Prisma;
 type Decimal = InstanceType<typeof Prisma.Decimal>;
 type DecimalInput = Decimal | string | number;
 
-/** Hasta esta diferencia (COP) se ofrece registrar como "Rendimientos" para cuadrar el ledger (ticket #36). */
+/** Valor por defecto del umbral de "Rendimientos" (COP) -- configurable en Configuracion, ver
+ * AppSettings.yieldAutoThreshold. Se usa como default de esta funcion y como valor inicial de la
+ * fila singleton la primera vez que se pide GET /api/settings. */
 export const YIELD_AUTO_THRESHOLD = new Decimal('200000');
 
 /**
@@ -47,11 +49,16 @@ export function balanceFromEntries(entries: { amount: DecimalInput }[]): Decimal
 
 /**
  * true si el saldo real de la cajita de Nu es MAYOR al calculado por el ledger, por una
- * diferencia positiva de hasta YIELD_AUTO_THRESHOLD -- caso en el que el paso 10 del cierre
- * ofrece agregar la diferencia como "Rendimientos". Si la diferencia es negativa (el saldo real
- * es menor al calculado) o mayor al umbral, no se sugiere -- queda para revision manual.
+ * diferencia positiva de hasta `threshold` (configurable, ver AppSettings.yieldAutoThreshold) --
+ * caso en el que el paso 10 del cierre ofrece agregar la diferencia como "Rendimientos". Si la
+ * diferencia es negativa (el saldo real es menor al calculado) o mayor al umbral, no se sugiere
+ * -- queda para revision manual.
  */
-export function suggestsYieldAdjustment(actualBalance: DecimalInput, calculatedBalance: DecimalInput): boolean {
+export function suggestsYieldAdjustment(
+  actualBalance: DecimalInput,
+  calculatedBalance: DecimalInput,
+  threshold: DecimalInput = YIELD_AUTO_THRESHOLD,
+): boolean {
   const difference = new Decimal(actualBalance).minus(calculatedBalance);
-  return difference.gt(0) && difference.lte(YIELD_AUTO_THRESHOLD);
+  return difference.gt(0) && difference.lte(threshold);
 }

@@ -85,4 +85,9 @@ describe('suggestsYieldAdjustment', () => {
   it('false cuando calzan exacto (no hace falta ajuste)', () => {
     expect(suggestsYieldAdjustment('10000000', '10000000')).toBe(false);
   });
+
+  it('respeta un umbral configurado distinto al default (ticket #36, umbral configurable)', () => {
+    expect(suggestsYieldAdjustment('10050000', '10000000', '50000')).toBe(true);
+    expect(suggestsYieldAdjustment('10050000.01', '10000000', '50000')).toBe(false);
+  });
 });

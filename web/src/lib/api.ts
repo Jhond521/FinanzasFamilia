@@ -641,6 +641,18 @@ export async function bulkConfirmSkippedDuplicates(batchId: string): Promise<num
   return body.confirmed;
 }
 
+// ---- Configuracion general (ticket #36) ----
+
+export type AppSettings = { yieldAutoThreshold: string };
+
+export async function fetchAppSettings(): Promise<AppSettings> {
+  return apiFetch('/settings');
+}
+
+export async function updateAppSettings(input: { yieldAutoThreshold: string }): Promise<AppSettings> {
+  return apiFetch('/settings', { method: 'PUT', body: JSON.stringify(input) });
+}
+
 // ---- Fase 4: tarjetas Nu Bank ----
 
 export type CreditCard = { id: string; name: string; ownerUserId: string; active: boolean; owner?: User };

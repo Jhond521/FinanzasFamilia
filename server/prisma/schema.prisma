@@ -474,3 +474,14 @@ model FamilySavingsEntry {
   @@index([userId, createdAt])
   @@map("family_savings_entries")
 }
+
+// ---- Configuracion general de la app (ticket #36) ----
+// Fila unica (singleton, get-or-create igual que card_months) para valores configurables que no
+// pertenecen a ningun mes/usuario/rubro en particular -- hoy solo el umbral de "Rendimientos".
+model AppSettings {
+  id                 String   @id @default(uuid())
+  yieldAutoThreshold Decimal  @default(200000) @map("yield_auto_threshold") @db.Decimal(14, 2)
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
