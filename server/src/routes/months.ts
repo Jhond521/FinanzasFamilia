@@ -13,6 +13,7 @@ import {
   leaveInAccountAtOpening,
   moveToSavingsFromBalance,
 } from '../services/openingReconciliation';
+import { netMonthlySavings, personAdjustmentShare, sharedExpensesDelta } from '../services/familySavings';
 import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
@@ -61,6 +62,11 @@ const monthBucketsSchema = z.array(
 
 const monthClosureCreateSchema = z.object({
   userId: z.string().uuid().optional(),
+  // Datos del wizard de cierre refinado (ticket #36) -- todos opcionales para no romper un
+  // cierre simple sin wizard (ej. pruebas, o si se decide saltar el detalle fino).
+  bigExpenseAmount: z.union([z.string(), z.number()]).optional(),
+  bigExpenseDescription: z.string().trim().optional(),
+  yieldAmount: z.union([z.string(), z.number()]).optional(),
 });
 
 const openingReconciliationCreateSchema = z.object({
@@ -432,6 +438,138 @@ function serializeClosure(closure: { id: string; monthId: string; userId: string
   };
 }
 
+// ---- Proceso de cierre refinado (ticket #36) ----
+
+/** Aporte presupuestado a Ahorros Conjuntos de una persona para un mes (paso 5 del wizard de
+ * cierre) -- mismo calculo que ya muestra el Dashboard, via buildLiveSummary. */
+async function monthlySavingsBudget(month: Month, userId: string): Promise<Decimal> {
+  const summary = await buildLiveSummary(month);
+  const savingsBucket = summary.buckets.filter((bucket) => bucket.kind === 'savings');
+  return savingsBucket.reduce(
+    (sum, bucket) => sum.plus(new Decimal(bucket.contributions.find((c) => c.userId === userId)?.amount ?? '0')),
+    new Decimal(0),
+  );
+}
+
+/** Delta de Gastos del Mes (household) repartido a una persona (paso 6) -- usa el delta con
+ * signo (no clampeado) de familySavings.ts, no sharedExpensesExcess de summary.ts (esa es para
+ * el cierre normal de #34 y nunca premia el subgasto). */
+async function personSharedExpensesAdjustment(month: Month, userId: string): Promise<Decimal> {
+  const [summary, incomes] = await Promise.all([
+    buildLiveSummary(month),
+    prisma.income.findMany({ where: { monthId: month.id } }),
+  ]);
+  const sharedBucket = summary.buckets.find((bucket) => bucket.kind === 'shared_expenses');
+  if (!sharedBucket) return new Decimal(0);
+
+  const delta = sharedExpensesDelta(sharedBucket.budget, sharedBucket.spent);
+  const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
+  const personIncome = incomes.find((i) => i.userId === userId)?.amount ?? 0;
+  return personAdjustmentShare(delta, personIncome, total);
+}
+
+/**
+ * Escribe en el ledger de Ahorros Familiares las entradas del cierre de esta persona para este
+ * mes: "Ahorros de [Mes]" (neteada por el gasto grande si lo hubo) y "Ajuste de ahorros de mes
+ * en cierre". Si ya existian entradas de un cierre anterior de este mismo (mes, persona) --
+ * porque se reabrio y se esta volviendo a cerrar -- se reemplazan por las nuevas en vez de
+ * duplicar (a diferencia de MonthClosure/OpeningReconciliation, que si acumulan historial: estas
+ * 3 entradas estan derivadas del estado actual del mes, no son eventos independientes).
+ */
+async function writeClosingLedgerEntries(
+  month: Month,
+  userId: string,
+  bigExpenseAmount: string | number | Decimal | undefined,
+  bigExpenseDescription: string | undefined,
+  yieldAmount: string | number | Decimal | undefined,
+): Promise<void> {
+  const [baseSavings, adjustment] = await Promise.all([
+    monthlySavingsBudget(month, userId),
+    personSharedExpensesAdjustment(month, userId),
+  ]);
+  const netSavings = netMonthlySavings(baseSavings, bigExpenseAmount ?? 0);
+  const monthLabel = `${MESES[month.month - 1]} ${month.year}`;
+
+  await prisma.familySavingsEntry.deleteMany({
+    where: { monthId: month.id, userId, type: { in: ['monthly_savings', 'adjustment', 'yield'] } },
+  });
+
+  await prisma.familySavingsEntry.createMany({
+    data: [
+      {
+        userId,
+        monthId: month.id,
+        type: 'monthly_savings',
+        amount: netSavings,
+        description:
+          bigExpenseAmount && new Decimal(bigExpenseAmount).isPositive()
+            ? `Ahorros de ${monthLabel} reducidos por ${bigExpenseDescription || 'gasto grande de ahorros'}`
+            : `Ahorros de ${monthLabel}`,
+      },
+      {
+        userId,
+        monthId: month.id,
+        type: 'adjustment',
+        amount: adjustment,
+        description: `Ajuste de ahorros de ${monthLabel} en cierre`,
+      },
+      ...(yieldAmount !== undefined
+        ? [
+            {
+              userId,
+              monthId: month.id,
+              type: 'yield' as const,
+              amount: new Decimal(yieldAmount),
+              description: `Rendimientos cajita Ahorros Conjuntos - ${monthLabel}`,
+            },
+          ]
+        : []),
+    ],
+  });
+}
+
+/** Chequeo previo al wizard de cierre (pasos 2 y 3): transacciones sin clasificar de quien
+ * cierra, y si el Cuadre de Inicio del mes siguiente ya se hizo para esa persona. */
+monthsRouter.get('/:id/close-check', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+
+  const unclassifiedCount = await prisma.transaction.count({
+    where: { monthId: month.id, ownerUserId: userId, type: 'unclassified' },
+  });
+
+  const next = month.month === 12 ? { year: month.year + 1, month: 1 } : { year: month.year, month: month.month + 1 };
+  const nextMonth = await prisma.month.findUnique({ where: { year_month: next } });
+  const nextMonthOpeningDone = nextMonth
+    ? Boolean(
+        await prisma.openingReconciliation.findFirst({
+          where: { monthId: nextMonth.id, userId },
+          orderBy: { createdAt: 'desc' },
+        }),
+      )
+    : false;
+
+  res.json({ unclassifiedCount, nextMonthExists: Boolean(nextMonth), nextMonthOpeningDone });
+});
+
+/** Cifras para los pasos 5 y 6 del wizard de cierre (informativo, no persiste nada). */
+monthsRouter.get('/:id/close-preview', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+
+  const [baseSavings, adjustment] = await Promise.all([
+    monthlySavingsBudget(month, userId),
+    personSharedExpensesAdjustment(month, userId),
+  ]);
+
+  res.json({
+    monthlySavingsBudget: baseSavings.toString(),
+    adjustment: adjustment.toString(),
+  });
+});
+
 monthsRouter.post('/:id/close-mine', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
@@ -442,6 +580,14 @@ monthsRouter.post('/:id/close-mine', async (req, res) => {
     return;
   }
   const userId = parsed.data.userId ?? req.user!.id;
+
+  await writeClosingLedgerEntries(
+    month,
+    userId,
+    parsed.data.bigExpenseAmount,
+    parsed.data.bigExpenseDescription,
+    parsed.data.yieldAmount,
+  );
 
   const closure = await prisma.monthClosure.create({
     data: { monthId: month.id, userId, action: 'closed' },

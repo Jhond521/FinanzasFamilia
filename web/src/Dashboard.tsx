@@ -6,7 +6,10 @@ import {
   confirmOpeningReconciliation,
   createMonth,
   downloadMonthExport,
+  fetchCloseCheck,
+  fetchClosePreview,
   fetchCurrentUser,
+  fetchFamilySavingsEntries,
   fetchLatestClosure,
   fetchLatestOpeningReconciliation,
   fetchMonthComparison,
@@ -394,6 +397,7 @@ function MonthClosureSection({
   onChanged: () => Promise<unknown>;
 }) {
   const queryClient = useQueryClient();
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const closureQueries = useQueries({
     queries: users.map((user) => ({
@@ -408,13 +412,10 @@ function MonthClosureSection({
 
   async function handleChange() {
     await Promise.all(users.map((user) => queryClient.invalidateQueries({ queryKey: ['months', monthId, 'closures', 'latest', user.id] })));
+    await queryClient.invalidateQueries({ queryKey: ['family-savings'] });
     await onChanged();
   }
 
-  const closeMineMutation = useMutation({
-    mutationFn: () => closeMine(monthId, currentUser.id),
-    onSuccess: handleChange,
-  });
   const reopenMineMutation = useMutation({
     mutationFn: () => reopenMine(monthId, currentUser.id),
     onSuccess: handleChange,
@@ -454,8 +455,8 @@ function MonthClosureSection({
             <button
               type="button"
               className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
-              onClick={() => closeMineMutation.mutate()}
-              disabled={closeMineMutation.isPending || !monthEnded}
+              onClick={() => setWizardOpen(true)}
+              disabled={!monthEnded}
             >
               Cerrar mi parte
             </button>
@@ -467,7 +468,359 @@ function MonthClosureSection({
           </>
         )}
       </div>
+
+      {wizardOpen && (
+        <MonthClosureWizard
+          monthId={monthId}
+          currentUser={currentUser}
+          monthYear={monthYear}
+          monthNumber={monthNumber}
+          onClose={() => setWizardOpen(false)}
+          onDone={async () => {
+            setWizardOpen(false);
+            await handleChange();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// ---- Wizard de cierre refinado (ticket #36) ----
+
+const YIELD_AUTO_THRESHOLD = 200000;
+
+type CloseWizardStep = 'check' | 'blocked' | 'nuBalance' | 'bigExpense' | 'breakdown' | 'finalBalance' | 'result';
+
+function MonthClosureWizard({
+  monthId,
+  currentUser,
+  monthYear,
+  monthNumber,
+  onClose,
+  onDone,
+}: {
+  monthId: string;
+  currentUser: CurrentUser;
+  monthYear: number;
+  monthNumber: number;
+  onClose: () => void;
+  onDone: () => Promise<void>;
+}) {
+  const [step, setStep] = useState<CloseWizardStep>('check');
+  const [nuBalance, setNuBalance] = useState('');
+  const [hasBigExpense, setHasBigExpense] = useState<boolean | null>(null);
+  const [bigExpenseAmount, setBigExpenseAmount] = useState('');
+  const [bigExpenseDescription, setBigExpenseDescription] = useState('');
+  const [finalBalance, setFinalBalance] = useState('');
+  const [acceptYield, setAcceptYield] = useState(false);
+
+  const monthLabel = `${MESES[monthNumber - 1]} ${monthYear}`;
+
+  const { data: check, isLoading: loadingCheck } = useQuery({
+    queryKey: ['months', monthId, 'close-check', currentUser.id],
+    queryFn: () => fetchCloseCheck(monthId, currentUser.id),
+  });
+
+  useEffect(() => {
+    if (!check || step !== 'check') return;
+    setStep(check.unclassifiedCount > 0 || !check.nextMonthOpeningDone ? 'blocked' : 'nuBalance');
+  }, [check, step]);
+
+  const { data: movementCandidates } = useQuery({
+    queryKey: ['transactions', monthId, { ownerUserId: currentUser.id, type: 'movement' }],
+    queryFn: () => fetchTransactions({ monthId, ownerUserId: currentUser.id, type: 'movement' }),
+    enabled: step === 'bigExpense',
+  });
+  const nonPayrollMovements = (movementCandidates ?? []).filter((tx) => !/NOMI|INTERBANC/i.test(tx.bankDescription));
+
+  const { data: preview } = useQuery({
+    queryKey: ['months', monthId, 'close-preview', currentUser.id],
+    queryFn: () => fetchClosePreview(monthId, currentUser.id),
+    enabled: step === 'breakdown' || step === 'finalBalance' || step === 'result',
+  });
+
+  const { data: pastEntries } = useQuery({
+    queryKey: ['family-savings', 'entries', currentUser.id, 'closure-wizard'],
+    queryFn: () => fetchFamilySavingsEntries({ userId: currentUser.id }),
+    enabled: step === 'finalBalance' || step === 'result',
+  });
+
+  const bigExpenseValue = hasBigExpense ? Number(bigExpenseAmount || '0') : 0;
+  const netSavings = preview ? Number(preview.monthlySavingsBudget) - bigExpenseValue : undefined;
+  const adjustment = preview ? Number(preview.adjustment) : undefined;
+  const balanceSoFar = pastEntries?.reduce((sum, entry) => sum + Number(entry.amount), 0) ?? 0;
+  const calculatedBalance =
+    netSavings !== undefined && adjustment !== undefined ? balanceSoFar + netSavings + adjustment : undefined;
+  const diff = calculatedBalance !== undefined && finalBalance ? Number(finalBalance) - calculatedBalance : undefined;
+  const suggestsYield = diff !== undefined && diff > 0 && diff <= YIELD_AUTO_THRESHOLD;
+
+  const closeMineMutation = useMutation({
+    mutationFn: () =>
+      closeMine(monthId, currentUser.id, {
+        ...(hasBigExpense
+          ? { bigExpenseAmount, bigExpenseDescription: bigExpenseDescription || 'gasto grande de ahorros' }
+          : {}),
+        ...(suggestsYield && acceptYield && diff !== undefined ? { yieldAmount: String(diff) } : {}),
+      }),
+    onSuccess: () => onDone(),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <div className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-t-2xl bg-white p-4 shadow-lg sm:rounded-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-ink">Cerrar {monthLabel}</h3>
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="text-ink-faint hover:text-ink">
+            ✕
+          </button>
+        </div>
+
+        {step === 'check' && <p className="text-sm text-ink-muted">Verificando…</p>}
+
+        {step === 'blocked' && check && (
+          <div className="flex flex-col gap-3">
+            {check.unclassifiedCount > 0 ? (
+              <>
+                <p className="text-sm text-ink-soft">
+                  Tienes <b>{check.unclassifiedCount}</b> transacción(es) sin clasificar este mes. Clasifícalas antes
+                  de cerrar.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                    Cerrar
+                  </button>
+                  <Link
+                    to="/revisar"
+                    onClick={onClose}
+                    className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                  >
+                    Ir a revisar
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-ink-soft">
+                  Antes de cerrar {monthLabel}, primero haz el Cuadre de Inicio del mes siguiente (así se deja en Nu
+                  lo de ese mes y lo que sobró de este).
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                    Cerrar
+                  </button>
+                  <Link
+                    to="/"
+                    onClick={onClose}
+                    className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                  >
+                    Ir al Dashboard
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === 'nuBalance' && (
+          <div className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1">
+              <span className="text-sm text-ink-soft">Saldo actual en Nu</span>
+              <CurrencyInput value={nuBalance} onChange={setNuBalance} autoFocus />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!nuBalance}
+                onClick={() => setStep('bigExpense')}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'bigExpense' && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-ink-soft">¿Hubo algún gasto grande de ahorros este mes (vacaciones, compras grandes)?</p>
+            {nonPayrollMovements.length > 0 && (
+              <div className="rounded-lg bg-cream p-2 text-xs text-ink-muted">
+                <p className="mb-1 font-semibold">Movimientos del mes que podrían ser candidatos:</p>
+                {nonPayrollMovements.map((tx) => (
+                  <div key={tx.id} className="flex justify-between">
+                    <span>{tx.bankDescription}</span>
+                    <span>{formatCOP(tx.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setHasBigExpense(false);
+                  setStep('breakdown');
+                }}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${hasBigExpense === false ? 'border-brand bg-brand-light text-brand' : 'border-line text-ink-soft'}`}
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={() => setHasBigExpense(true)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${hasBigExpense === true ? 'border-brand bg-brand-light text-brand' : 'border-line text-ink-soft'}`}
+              >
+                Sí
+              </button>
+            </div>
+            {hasBigExpense === true && (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm text-ink-soft">Monto gastado</span>
+                  <CurrencyInput value={bigExpenseAmount} onChange={setBigExpenseAmount} autoFocus />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm text-ink-soft">Descripción</span>
+                  <input
+                    type="text"
+                    value={bigExpenseDescription}
+                    onChange={(e) => setBigExpenseDescription(e.target.value)}
+                    placeholder="Ej. Compra de tiquetes aéreos"
+                    className="rounded-lg border border-line px-3 py-2 text-sm"
+                  />
+                </label>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={!bigExpenseAmount || !bigExpenseDescription}
+                    onClick={() => setStep('breakdown')}
+                    className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+                  >
+                    Continuar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {step === 'breakdown' &&
+          (preview ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Ahorros de {monthLabel} (presupuestado)</span>
+                  <span className="font-medium text-ink">{formatCOP(preview.monthlySavingsBudget)}</span>
+                </div>
+                {hasBigExpense && (
+                  <div className="flex justify-between">
+                    <span className="text-ink-muted">Menos gasto grande ({bigExpenseDescription})</span>
+                    <span className="font-medium text-danger">− {formatCOP(bigExpenseAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-ink-muted">Ajuste de Gastos del Mes</span>
+                  <span className={`font-medium ${Number(preview.adjustment) < 0 ? 'text-danger' : 'text-success'}`}>
+                    {formatCOP(preview.adjustment)}
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-lg bg-ink p-3 text-white">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/70">Ahorros de {monthLabel} (neto)</span>
+                  <span className="font-bold">{formatCOP(String(netSavings ?? 0))}</span>
+                </div>
+              </div>
+              <p className="text-xs text-ink-faint">
+                Estas dos líneas quedarán en el ledger de Ahorros Familiares al confirmar el cierre.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep('finalBalance')}
+                  className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">Calculando…</p>
+          ))}
+
+        {step === 'finalBalance' && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-ink-soft">Saldo en cajita de Ahorros Conjuntos de Nu, después de mover lo de este cierre:</p>
+            <CurrencyInput value={finalBalance} onChange={setFinalBalance} autoFocus />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!finalBalance}
+                onClick={() => setStep('result')}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'result' && diff !== undefined && (
+          <div className="flex flex-col gap-3">
+            {diff === 0 ? (
+              <p className="text-sm font-semibold text-success">El saldo cuadra exacto.</p>
+            ) : suggestsYield ? (
+              <>
+                <p className="text-sm text-ink-soft">
+                  El saldo real es {formatCOP(String(diff))} mayor al calculado — dentro del margen para registrarlo
+                  como Rendimientos.
+                </p>
+                <label className="flex items-center gap-2 text-sm text-ink-soft">
+                  <input type="checkbox" checked={acceptYield} onChange={(e) => setAcceptYield(e.target.checked)} />
+                  Agregar {formatCOP(String(diff))} como "Rendimientos" para cuadrar el ledger
+                </label>
+              </>
+            ) : (
+              <p className="text-sm text-ink-soft">
+                Hay una diferencia de {formatCOP(String(Math.abs(diff)))} ({diff > 0 ? 'a favor' : 'en contra'})
+                respecto a lo calculado. Revisa manualmente (puedes agregar un movimiento en Ahorros Familiares) — el
+                cierre se puede completar igual.
+              </p>
+            )}
+            {closeMineMutation.isError && (
+              <p className="text-sm text-danger">
+                {closeMineMutation.error instanceof Error ? closeMineMutation.error.message : 'No se pudo cerrar'}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={closeMineMutation.isPending}
+                onClick={() => closeMineMutation.mutate()}
+                className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                {closeMineMutation.isPending ? 'Cerrando…' : 'Confirmar cierre'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {loadingCheck && step === 'check' && <p className="text-xs text-ink-faint">Cargando…</p>}
+      </div>
+    </div>
   );
 }
 

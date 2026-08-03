@@ -26,6 +26,7 @@ model User {
   creditCards           CreditCard[]  @relation("CreditCardOwner")
   openingReconciliations OpeningReconciliation[]
   monthClosures         MonthClosure[]
+  familySavingsEntries  FamilySavingsEntry[]
 
   @@map("users")
 }
@@ -143,6 +144,7 @@ model Month {
   summary       MonthSummary?
   openingReconciliations OpeningReconciliation[]
   monthClosures MonthClosure[]
+  familySavingsEntries FamilySavingsEntry[]
 
   @@unique([year, month])
   @@map("months")
@@ -443,4 +445,32 @@ model MonthClosure {
 
   @@index([monthId, userId, createdAt])
   @@map("month_closures")
+}
+
+enum FamilySavingsEntryType {
+  initial
+  monthly_savings
+  adjustment
+  yield
+  manual
+}
+
+// ---- Ahorros Familiares (ticket #36) ----
+// Ledger de ahorros conjuntos en Nu por persona -- nunca se borra. El saldo de una persona es la
+// suma de sus entradas; Ahorros Familiares es la suma de ambas. monthId es null para el saldo
+// inicial y las entradas manuales libres (no atadas a un cierre de mes en particular).
+model FamilySavingsEntry {
+  id          String                  @id @default(uuid())
+  userId      String                  @map("user_id")
+  monthId     String?                 @map("month_id")
+  type        FamilySavingsEntryType
+  amount      Decimal                 @db.Decimal(14, 2)
+  description String
+  createdAt   DateTime                @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id])
+  month Month? @relation(fields: [monthId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("family_savings_entries")
 }

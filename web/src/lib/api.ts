@@ -190,8 +190,12 @@ export async function fetchLatestClosure(monthId: string, userId: string): Promi
 export async function closeMine(
   monthId: string,
   userId: string,
+  extra?: { bigExpenseAmount?: string; bigExpenseDescription?: string; yieldAmount?: string },
 ): Promise<{ closure: MonthClosure; month: MonthDetail['month']; summary?: MonthSummaryDetail }> {
-  return apiFetch(`/months/${monthId}/close-mine`, { method: 'POST', body: JSON.stringify({ userId }) });
+  return apiFetch(`/months/${monthId}/close-mine`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, ...extra }),
+  });
 }
 
 export async function reopenMine(
@@ -199,6 +203,76 @@ export async function reopenMine(
   userId: string,
 ): Promise<{ closure: MonthClosure; month: MonthDetail['month'] }> {
   return apiFetch(`/months/${monthId}/reopen-mine`, { method: 'POST', body: JSON.stringify({ userId }) });
+}
+
+// ---- Proceso de cierre refinado (ticket #36) ----
+
+export type CloseCheck = {
+  unclassifiedCount: number;
+  nextMonthExists: boolean;
+  nextMonthOpeningDone: boolean;
+};
+
+export async function fetchCloseCheck(monthId: string, userId: string): Promise<CloseCheck> {
+  return apiFetch(`/months/${monthId}/close-check?userId=${userId}`);
+}
+
+export type ClosePreview = {
+  monthlySavingsBudget: string;
+  adjustment: string;
+};
+
+export async function fetchClosePreview(monthId: string, userId: string): Promise<ClosePreview> {
+  return apiFetch(`/months/${monthId}/close-preview?userId=${userId}`);
+}
+
+// ---- Ahorros Familiares (ticket #36) ----
+
+export type FamilySavingsEntryType = 'initial' | 'monthly_savings' | 'adjustment' | 'yield' | 'manual';
+
+export type FamilySavingsEntry = {
+  id: string;
+  userId: string;
+  monthId: string | null;
+  type: FamilySavingsEntryType;
+  amount: string;
+  description: string;
+  createdAt: string;
+};
+
+export type FamilySavingsSummary = {
+  balances: { userId: string; name: string; balance: string }[];
+  total: string;
+};
+
+export async function fetchFamilySavingsSummary(): Promise<FamilySavingsSummary> {
+  return apiFetch('/family-savings/summary');
+}
+
+export async function fetchFamilySavingsEntries(params?: {
+  userId?: string;
+  monthId?: string;
+}): Promise<FamilySavingsEntry[]> {
+  const query = new URLSearchParams();
+  if (params?.userId) query.set('userId', params.userId);
+  if (params?.monthId) query.set('monthId', params.monthId);
+  const qs = query.toString();
+  const body = await apiFetch<{ entries: FamilySavingsEntry[] }>(`/family-savings/entries${qs ? `?${qs}` : ''}`);
+  return body.entries;
+}
+
+export async function createFamilySavingsEntry(input: {
+  userId: string;
+  type?: FamilySavingsEntryType;
+  amount: string;
+  description: string;
+  monthId?: string;
+}): Promise<FamilySavingsEntry> {
+  const body = await apiFetch<{ entry: FamilySavingsEntry }>('/family-savings/entries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return body.entry;
 }
 
 export type MonthComparisonRow = {

@@ -6,6 +6,7 @@ const LINKS = [
   { to: '/revisar', label: 'Revisar' },
   { to: '/transacciones', label: 'Transacciones' },
   { to: '/tarjetas', label: 'Tarjetas' },
+  { to: '/ahorros-familiares', label: 'Ahorros Familiares' },
   { to: '/configuracion', label: 'Configuración' },
 ];
 

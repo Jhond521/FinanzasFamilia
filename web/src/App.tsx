@@ -4,6 +4,7 @@ import { fetchCurrentUser } from './lib/api';
 import CardsScreen from './CardsScreen';
 import ConfigurationScreen from './ConfigurationScreen';
 import Dashboard from './Dashboard';
+import FamilySavingsScreen from './FamilySavingsScreen';
 import ImportScreen from './ImportScreen';
 import QuickEntry from './QuickEntry';
 import ReviewQueueScreen from './ReviewQueueScreen';
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/revisar" element={<ReviewQueueScreen />} />
             <Route path="/transacciones" element={<TransactionsScreen />} />
             <Route path="/tarjetas" element={<CardsScreen />} />
+            <Route path="/ahorros-familiares" element={<FamilySavingsScreen />} />
             <Route path="/configuracion" element={<ConfigurationScreen />} />
           </>
         ) : (
