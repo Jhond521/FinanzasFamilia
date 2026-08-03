@@ -17,6 +17,7 @@ type CurrencyInputProps = {
   /** Nombre accesible del campo cuando no hay un <label> visible asociado (ej. el monto grande
    * de registro rapido, que por diseño no lleva texto de label encima). */
   ariaLabel?: string;
+  autoFocus?: boolean;
 };
 
 export function CurrencyInput({
@@ -29,6 +30,7 @@ export function CurrencyInput({
   variant = 'default',
   allowNegative = false,
   ariaLabel,
+  autoFocus,
 }: CurrencyInputProps) {
   const [display, setDisplay] = useState(() => formatAmountDisplay(value));
   const isLarge = variant === 'large';
@@ -66,6 +68,7 @@ export function CurrencyInput({
         disabled={disabled}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        autoFocus={autoFocus}
       />
     </div>
   );

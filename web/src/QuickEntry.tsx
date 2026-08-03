@@ -58,6 +58,7 @@ export default function QuickEntry({ currentUser }: Props) {
   const [userId, setUserId] = useState(currentUser.id);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   const date = dateMode === 'today' ? todayStr : dateMode === 'yesterday' ? yesterdayStr : customDate;
 
@@ -109,6 +110,7 @@ export default function QuickEntry({ currentUser }: Props) {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteQuickEntry(id),
     onSuccess: async () => {
+      setConfirmingDeleteId(null);
       await invalidateAfterSave();
       if (deleteMutation.variables === editingId) {
         resetForm();
@@ -163,7 +165,7 @@ export default function QuickEntry({ currentUser }: Props) {
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-xl border border-line bg-white p-4">
-        <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" ariaLabel="Monto" />
+        <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" ariaLabel="Monto" autoFocus />
 
         <div className="flex rounded-xl bg-cream-surface p-1">
           {(['personal', 'joint'] as const).map((t) => (
@@ -180,6 +182,8 @@ export default function QuickEntry({ currentUser }: Props) {
           ))}
         </div>
 
+        {/* text-base (16px) en los inputs de esta pantalla: por debajo de 16px, iOS Safari hace
+            zoom automatico de toda la pagina al enfocar el campo. */}
         <label className="flex flex-col gap-1">
           <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Descripcion</span>
           <input
@@ -187,7 +191,7 @@ export default function QuickEntry({ currentUser }: Props) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Almuerzo con Camila"
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-lg border border-line px-3 py-2 text-base"
           />
         </label>
 
@@ -227,7 +231,7 @@ export default function QuickEntry({ currentUser }: Props) {
               type="date"
               value={customDate}
               onChange={(e) => setCustomDate(e.target.value)}
-              className="mt-2 rounded-lg border border-line px-3 py-2 text-sm"
+              className="mt-2 rounded-lg border border-line px-3 py-2 text-base"
             />
           )}
         </div>
@@ -291,14 +295,31 @@ export default function QuickEntry({ currentUser }: Props) {
                     </div>
                   </button>
                   <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>
-                  <button
-                    type="button"
-                    onClick={() => deleteMutation.mutate(entry.id)}
-                    className="text-xs font-semibold text-danger"
-                    aria-label={`Borrar ${entry.description}`}
-                  >
-                    Borrar
-                  </button>
+                  {confirmingDeleteId === entry.id ? (
+                    <div className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold">
+                      <span className="text-ink-muted">¿Seguro?</span>
+                      <button
+                        type="button"
+                        onClick={() => deleteMutation.mutate(entry.id)}
+                        disabled={deleteMutation.isPending}
+                        className="text-danger disabled:opacity-50"
+                      >
+                        Si, borrar
+                      </button>
+                      <button type="button" onClick={() => setConfirmingDeleteId(null)} className="text-ink-muted">
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDeleteId(entry.id)}
+                      className="text-xs font-semibold text-danger"
+                      aria-label={`Borrar ${entry.description}`}
+                    >
+                      Borrar
+                    </button>
+                  )}
                 </div>
               );
             })}
