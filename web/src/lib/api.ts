@@ -170,12 +170,35 @@ export async function fetchMonthSummary(monthId: string): Promise<MonthSummaryDe
   return apiFetch<MonthSummaryDetail>(`/months/${monthId}/summary`);
 }
 
-export async function closeMonth(monthId: string): Promise<{ month: MonthDetail['month']; summary: MonthSummaryDetail }> {
-  return apiFetch(`/months/${monthId}/close`, { method: 'POST' });
+// ---- Cierre de mes individual por persona (ticket #34) ----
+
+export type MonthClosure = {
+  id: string;
+  monthId: string;
+  userId: string;
+  action: 'closed' | 'reopened';
+  createdAt: string;
+};
+
+export async function fetchLatestClosure(monthId: string, userId: string): Promise<MonthClosure | null> {
+  const body = await apiFetch<{ closure: MonthClosure | null }>(
+    `/months/${monthId}/closures/latest?userId=${userId}`,
+  );
+  return body.closure;
 }
 
-export async function reopenMonth(monthId: string): Promise<{ month: MonthDetail['month'] }> {
-  return apiFetch(`/months/${monthId}/reopen`, { method: 'POST' });
+export async function closeMine(
+  monthId: string,
+  userId: string,
+): Promise<{ closure: MonthClosure; month: MonthDetail['month']; summary?: MonthSummaryDetail }> {
+  return apiFetch(`/months/${monthId}/close-mine`, { method: 'POST', body: JSON.stringify({ userId }) });
+}
+
+export async function reopenMine(
+  monthId: string,
+  userId: string,
+): Promise<{ closure: MonthClosure; month: MonthDetail['month'] }> {
+  return apiFetch(`/months/${monthId}/reopen-mine`, { method: 'POST', body: JSON.stringify({ userId }) });
 }
 
 export type MonthComparisonRow = {

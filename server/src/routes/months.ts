@@ -59,6 +59,10 @@ const monthBucketsSchema = z.array(
   }),
 );
 
+const monthClosureCreateSchema = z.object({
+  userId: z.string().uuid().optional(),
+});
+
 const openingReconciliationCreateSchema = z.object({
   userId: z.string().uuid().optional(),
   // Saldo antes de hacer la transferencia -- se usa para calcular cuanto mover a Nu (ticket #31).
@@ -81,7 +85,7 @@ async function findMonthOr404(res: import('express').Response, id: string): Prom
 }
 
 /** Snapshot de monthBuckets a partir de los buckets generales activos (RF2) — usado al crear
- * un mes (POST /) y al crear el mes siguiente al cerrar (POST /:id/close). */
+ * un mes (POST /). */
 function activeBucketsSnapshotData(activeBuckets: Bucket[]) {
   return activeBuckets.map((bucket) => ({
     bucketId: bucket.id,
@@ -93,14 +97,10 @@ function activeBucketsSnapshotData(activeBuckets: Bucket[]) {
   }));
 }
 
-function nextYearMonth(year: number, month: number): { year: number; month: number } {
-  return month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 };
-}
-
 /**
  * Calcula el summary completo de un mes (presupuesto/gastado/disponible por bolsa + ahorro
  * real/dejar en cuenta por persona). Usado tanto por GET /:id/summary (mes abierto, en vivo)
- * como por POST /:id/close (para congelar el snapshot en month_summaries).
+ * como por freezeMonth (para congelar el snapshot en month_summaries al cerrar entre los dos).
  */
 async function buildLiveSummary(month: Month) {
   const [incomes, monthBuckets, quickEntries, transactions] = await Promise.all([
@@ -371,7 +371,7 @@ monthsRouter.get('/:id/summary', async (req, res) => {
       res.json(frozen.data);
       return;
     }
-    // Defensivo: un mes cerrado deberia tener siempre su snapshot (lo crea POST /:id/close).
+    // Defensivo: un mes cerrado deberia tener siempre su snapshot (lo crea freezeMonth).
     // Si por algun motivo no existe, se recalcula en vivo en vez de fallar.
   }
 
@@ -379,20 +379,18 @@ monthsRouter.get('/:id/summary', async (req, res) => {
   res.json(summary);
 });
 
-monthsRouter.post('/:id/close', async (req, res) => {
-  const month = await findMonthOr404(res, req.params.id);
-  if (!month) return;
-  if (month.status === 'closed') {
-    badRequest(res, 'month_closed', 'El mes ya esta cerrado');
-    return;
-  }
+// ---- Cierre de mes individual por persona (ticket #34) ----
 
+/**
+ * Congela el summary del mes y marca Month.status='closed' -- se dispara solo cuando ambas
+ * personas cerraron su parte (bothClosed). Ya no crea el mes siguiente: eso se desacoplo del
+ * cierre (RF muevo #34), se crea solo con POST /months cuando cualquiera de los dos lo pida.
+ */
+async function freezeMonth(month: Month) {
   const summary = await buildLiveSummary(month);
-  // El summary se calculo con el mes todavia 'open' (findMonthOr404 lo trajo antes de cerrar);
-  // se corrige aqui para que el snapshot congelado no quede con un status desactualizado.
+  // El summary se calculo con el mes todavia 'open' (se llama antes de marcarlo cerrado); se
+  // corrige aqui para que el snapshot congelado no quede con un status desactualizado.
   summary.month.status = 'closed';
-  const next = nextYearMonth(month.year, month.month);
-  const activeBuckets = await prisma.bucket.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
 
   const closedMonth = await prisma.$transaction(async (tx) => {
     const updated = await tx.month.update({
@@ -404,37 +402,108 @@ monthsRouter.post('/:id/close', async (req, res) => {
       create: { monthId: month.id, data: summary as unknown as Prisma.InputJsonValue },
       update: { data: summary as unknown as Prisma.InputJsonValue },
     });
-
-    const existingNext = await tx.month.findUnique({ where: { year_month: next } });
-    if (!existingNext) {
-      await tx.month.create({
-        data: {
-          year: next.year,
-          month: next.month,
-          monthBuckets: { create: activeBucketsSnapshotData(activeBuckets) },
-        },
-      });
-    }
-
     return updated;
   });
 
-  res.json({ month: closedMonth, summary });
-});
+  return { closedMonth, summary };
+}
 
-monthsRouter.post('/:id/reopen', async (req, res) => {
+/** true si el ultimo evento de CADA usuario para este mes es 'closed' (ninguno lo reabrio despues). */
+async function bothClosed(monthId: string): Promise<boolean> {
+  const users = await prisma.user.findMany();
+  const latestStates = await Promise.all(
+    users.map((user) =>
+      prisma.monthClosure.findFirst({
+        where: { monthId, userId: user.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ),
+  );
+  return users.length > 0 && latestStates.every((latest) => latest?.action === 'closed');
+}
+
+function serializeClosure(closure: { id: string; monthId: string; userId: string; action: string; createdAt: Date }) {
+  return {
+    id: closure.id,
+    monthId: closure.monthId,
+    userId: closure.userId,
+    action: closure.action,
+    createdAt: closure.createdAt,
+  };
+}
+
+monthsRouter.post('/:id/close-mine', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
-  if (month.status === 'open') {
-    badRequest(res, 'month_open', 'El mes ya esta abierto');
+
+  const parsed = monthClosureCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'invalid_body', parsed.error.message);
     return;
   }
+  const userId = parsed.data.userId ?? req.user!.id;
 
-  const reopened = await prisma.month.update({
-    where: { id: month.id },
-    data: { status: 'open', closedAt: null },
+  const closure = await prisma.monthClosure.create({
+    data: { monthId: month.id, userId, action: 'closed' },
   });
-  res.json({ month: reopened });
+
+  let currentMonth: Month = month;
+  let summary: Awaited<ReturnType<typeof buildLiveSummary>> | undefined;
+  if (await bothClosed(month.id)) {
+    const frozen = await freezeMonth(month);
+    currentMonth = frozen.closedMonth;
+    summary = frozen.summary;
+  }
+
+  res.status(201).json({
+    closure: serializeClosure(closure),
+    month: { id: currentMonth.id, year: currentMonth.year, month: currentMonth.month, status: currentMonth.status },
+    ...(summary ? { summary } : {}),
+  });
+});
+
+monthsRouter.post('/:id/reopen-mine', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+
+  const parsed = monthClosureCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'invalid_body', parsed.error.message);
+    return;
+  }
+  const userId = parsed.data.userId ?? req.user!.id;
+
+  const closure = await prisma.monthClosure.create({
+    data: { monthId: month.id, userId, action: 'reopened' },
+  });
+
+  // Si alguien reabre su parte, por definicion ya no estan los dos cerrados -- el mes vuelve a
+  // 'open' (si no lo estaba ya). El cierre de la otra persona no se toca, sigue registrado.
+  let currentMonth: Month = month;
+  if (month.status === 'closed') {
+    currentMonth = await prisma.month.update({
+      where: { id: month.id },
+      data: { status: 'open', closedAt: null },
+    });
+  }
+
+  res.status(201).json({
+    closure: serializeClosure(closure),
+    month: { id: currentMonth.id, year: currentMonth.year, month: currentMonth.month, status: currentMonth.status },
+  });
+});
+
+monthsRouter.get('/:id/closures/latest', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+  const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+
+  const latest = await prisma.monthClosure.findFirst({
+    where: { monthId: month.id, userId },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json({ closure: latest ? serializeClosure(latest) : null });
 });
 
 monthsRouter.get('/:id/export', async (req, res) => {

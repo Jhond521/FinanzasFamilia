@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  closeMonth,
+  closeMine,
   confirmOpeningReconciliation,
   createMonth,
   downloadMonthExport,
   fetchCurrentUser,
+  fetchLatestClosure,
   fetchLatestOpeningReconciliation,
   fetchMonthComparison,
   fetchMonthDetail,
@@ -16,7 +17,7 @@ import {
   fetchQuickEntries,
   fetchTransactions,
   fetchUsers,
-  reopenMonth,
+  reopenMine,
   replaceMonthBuckets,
   replaceMonthIncomes,
   type CurrentUser,
@@ -205,16 +206,6 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
       queryClient.invalidateQueries({ queryKey: ['months', 'comparison'] }),
     ]);
 
-  const closeMonthMutation = useMutation({
-    mutationFn: () => closeMonth(monthId),
-    onSuccess: invalidateMonth,
-  });
-
-  const reopenMonthMutation = useMutation({
-    mutationFn: () => reopenMonth(monthId),
-    onSuccess: invalidateMonth,
-  });
-
   const exportMutation = useMutation({
     mutationFn: () => {
       const m = detail!.month;
@@ -366,37 +357,117 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
               </div>
             ))}
           </div>
-          <div className="mt-5 flex flex-col items-end gap-2">
-            {isClosed ? (
-              <button
-                type="button"
-                className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
-                onClick={() => reopenMonthMutation.mutate()}
-                disabled={reopenMonthMutation.isPending}
-              >
-                Reabrir mes
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
-                  onClick={() => closeMonthMutation.mutate()}
-                  disabled={closeMonthMutation.isPending || !monthHasEnded(summary.month.year, summary.month.month)}
-                >
-                  Cerrar mes
-                </button>
-                {!monthHasEnded(summary.month.year, summary.month.month) && (
-                  <p className="text-xs text-white/60">
-                    Se habilita cuando termine {MESES[summary.month.month - 1]} {summary.month.year}.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
+          {currentUser && (
+            <MonthClosureSection
+              monthId={monthId}
+              currentUser={currentUser}
+              users={users}
+              isClosed={isClosed}
+              monthYear={summary.month.year}
+              monthNumber={summary.month.month}
+              onChanged={invalidateMonth}
+            />
+          )}
         </section>
       )}
     </div>
+  );
+}
+
+// ---- Cierre de mes individual por persona (ticket #34) ----
+
+function MonthClosureSection({
+  monthId,
+  currentUser,
+  users,
+  isClosed,
+  monthYear,
+  monthNumber,
+  onChanged,
+}: {
+  monthId: string;
+  currentUser: CurrentUser;
+  users: { id: string; name: string }[];
+  isClosed: boolean;
+  monthYear: number;
+  monthNumber: number;
+  onChanged: () => Promise<unknown>;
+}) {
+  const queryClient = useQueryClient();
+
+  const closureQueries = useQueries({
+    queries: users.map((user) => ({
+      queryKey: ['months', monthId, 'closures', 'latest', user.id],
+      queryFn: () => fetchLatestClosure(monthId, user.id),
+    })),
+  });
+
+  const currentUserRecord = closureQueries[users.findIndex((u) => u.id === currentUser.id)]?.data;
+  const currentUserClosed = currentUserRecord?.action === 'closed';
+  const monthEnded = monthHasEnded(monthYear, monthNumber);
+
+  async function handleChange() {
+    await Promise.all(users.map((user) => queryClient.invalidateQueries({ queryKey: ['months', monthId, 'closures', 'latest', user.id] })));
+    await onChanged();
+  }
+
+  const closeMineMutation = useMutation({
+    mutationFn: () => closeMine(monthId, currentUser.id),
+    onSuccess: handleChange,
+  });
+  const reopenMineMutation = useMutation({
+    mutationFn: () => reopenMine(monthId, currentUser.id),
+    onSuccess: handleChange,
+  });
+
+  return (
+    <>
+      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs">
+        {users.map((user, i) => {
+          const record = closureQueries[i]?.data;
+          const closed = record?.action === 'closed';
+          return (
+            <span key={user.id} className={`flex items-center gap-1 ${closed ? 'text-success' : 'text-white/50'}`}>
+              <span aria-hidden="true">{closed ? '✓' : '○'}</span>
+              <span>
+                {user.name}
+                {closed ? ` · ${new Date(record!.createdAt).toLocaleDateString('es-CO')}` : ' · pendiente'}
+              </span>
+            </span>
+          );
+        })}
+        {isClosed && <span className="font-semibold text-success">Mes cerrado</span>}
+      </div>
+
+      <div className="mt-4 flex flex-col items-end gap-2">
+        {currentUserClosed ? (
+          <button
+            type="button"
+            className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+            onClick={() => reopenMineMutation.mutate()}
+            disabled={reopenMineMutation.isPending}
+          >
+            Reabrir mi cierre
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              onClick={() => closeMineMutation.mutate()}
+              disabled={closeMineMutation.isPending || !monthEnded}
+            >
+              Cerrar mi parte
+            </button>
+            {!monthEnded && (
+              <p className="text-xs text-white/60">
+                Se habilita cuando termine {MESES[monthNumber - 1]} {monthYear}.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </>
   );
 }
 

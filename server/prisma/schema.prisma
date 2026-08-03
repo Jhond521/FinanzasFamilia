@@ -25,6 +25,7 @@ model User {
   importBatchesUploaded ImportBatch[] @relation("ImportBatchUploader")
   creditCards           CreditCard[]  @relation("CreditCardOwner")
   openingReconciliations OpeningReconciliation[]
+  monthClosures         MonthClosure[]
 
   @@map("users")
 }
@@ -141,6 +142,7 @@ model Month {
   cardMonths    CardMonth[]
   summary       MonthSummary?
   openingReconciliations OpeningReconciliation[]
+  monthClosures MonthClosure[]
 
   @@unique([year, month])
   @@map("months")
@@ -417,4 +419,28 @@ model OpeningReconciliation {
 
   @@index([monthId, userId, createdAt])
   @@map("opening_reconciliations")
+}
+
+enum MonthClosureActionType {
+  closed
+  reopened
+}
+
+// ---- Cierre de mes individual por persona (ticket #34) ----
+// Historial de eventos de cierre/reapertura por persona y mes -- nunca se borra (igual que
+// opening_reconciliations); el estado actual de una persona es el ultimo evento. El mes se
+// congela de verdad (Month.status='closed', month_summaries) solo cuando ambas personas estan
+// en estado 'closed' -- ver computeBothClosed en months.ts.
+model MonthClosure {
+  id        String                  @id @default(uuid())
+  monthId   String                  @map("month_id")
+  userId    String                  @map("user_id")
+  action    MonthClosureActionType
+  createdAt DateTime                @default(now()) @map("created_at")
+
+  month Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([monthId, userId, createdAt])
+  @@map("month_closures")
 }
