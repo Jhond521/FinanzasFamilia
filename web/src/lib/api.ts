@@ -192,6 +192,57 @@ export async function fetchMonthComparison(): Promise<MonthComparisonRow[]> {
   return body.months;
 }
 
+// ---- Cuadre de Inicio (ticket #29) ----
+
+export type OpeningReconciliationPreview = {
+  userId: string;
+  totalSharedExpenses: string;
+  totalSavings: string;
+  totalPersonal: string;
+  expensesToDate: string;
+  leaveInAccount: string;
+  moveToSavings: string;
+};
+
+export async function fetchOpeningReconciliationPreview(
+  monthId: string,
+  userId: string,
+): Promise<OpeningReconciliationPreview> {
+  return apiFetch(`/months/${monthId}/opening-reconciliation/preview?userId=${userId}`);
+}
+
+export type OpeningReconciliation = {
+  id: string;
+  monthId: string;
+  userId: string;
+  accountBalance: string;
+  expensesToDate: string;
+  leaveInAccount: string;
+  moveToSavings: string;
+  matched: boolean;
+  createdAt: string;
+};
+
+export async function fetchLatestOpeningReconciliation(
+  monthId: string,
+  userId: string,
+): Promise<OpeningReconciliation | null> {
+  const body = await apiFetch<{ openingReconciliation: OpeningReconciliation | null }>(
+    `/months/${monthId}/opening-reconciliation/latest?userId=${userId}`,
+  );
+  return body.openingReconciliation;
+}
+
+export async function confirmOpeningReconciliation(
+  monthId: string,
+  input: { userId: string; accountBalance: string },
+): Promise<{ openingReconciliation: OpeningReconciliation; diff: string }> {
+  return apiFetch(`/months/${monthId}/opening-reconciliation`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 /** Descarga el .xlsx del mes (bolsas + transacciones) y dispara el guardado en el navegador. */
 export async function downloadMonthExport(monthId: string, filename: string): Promise<void> {
   const response = await fetch(buildApiUrl(`/months/${monthId}/export`), { credentials: 'include' });

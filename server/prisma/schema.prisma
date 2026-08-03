@@ -24,6 +24,7 @@ model User {
   importBatchesOwned    ImportBatch[] @relation("ImportBatchOwner")
   importBatchesUploaded ImportBatch[] @relation("ImportBatchUploader")
   creditCards           CreditCard[]  @relation("CreditCardOwner")
+  openingReconciliations OpeningReconciliation[]
 
   @@map("users")
 }
@@ -139,6 +140,7 @@ model Month {
   importBatches ImportBatch[]
   cardMonths    CardMonth[]
   summary       MonthSummary?
+  openingReconciliations OpeningReconciliation[]
 
   @@unique([year, month])
   @@map("months")
@@ -393,4 +395,26 @@ model CardItem {
   cardMonth CardMonth @relation(fields: [cardMonthId], references: [id], onDelete: Cascade)
 
   @@map("card_items")
+}
+
+// ---- Cuadre de Inicio (ticket #29) ----
+// Historial de intentos de cuadre de apertura de mes por persona: guarda el saldo confirmado
+// tras la transferencia y las cifras calculadas en ese momento, para poder mostrar "realizado
+// en [fecha]" y permitir rehacerlo sin perder los intentos anteriores (igual que import_batches).
+model OpeningReconciliation {
+  id              String   @id @default(uuid())
+  monthId         String   @map("month_id")
+  userId          String   @map("user_id")
+  accountBalance  Decimal  @map("account_balance") @db.Decimal(14, 2)
+  expensesToDate  Decimal  @map("expenses_to_date") @db.Decimal(14, 2)
+  leaveInAccount  Decimal  @map("leave_in_account") @db.Decimal(14, 2)
+  moveToSavings   Decimal  @map("move_to_savings") @db.Decimal(14, 2)
+  matched         Boolean
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  month Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([monthId, userId, createdAt])
+  @@map("opening_reconciliations")
 }
