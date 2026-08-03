@@ -207,8 +207,11 @@ export type OpeningReconciliationPreview = {
 export async function fetchOpeningReconciliationPreview(
   monthId: string,
   userId: string,
+  accountBalance: string,
 ): Promise<OpeningReconciliationPreview> {
-  return apiFetch(`/months/${monthId}/opening-reconciliation/preview?userId=${userId}`);
+  return apiFetch(
+    `/months/${monthId}/opening-reconciliation/preview?userId=${userId}&accountBalance=${accountBalance}`,
+  );
 }
 
 export type OpeningReconciliation = {
@@ -235,7 +238,7 @@ export async function fetchLatestOpeningReconciliation(
 
 export async function confirmOpeningReconciliation(
   monthId: string,
-  input: { userId: string; accountBalance: string },
+  input: { userId: string; accountBalance: string; confirmedBalance: string },
 ): Promise<{ openingReconciliation: OpeningReconciliation; diff: string }> {
   return apiFetch(`/months/${monthId}/opening-reconciliation`, {
     method: 'POST',

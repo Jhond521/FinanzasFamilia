@@ -592,13 +592,18 @@ function OpeningReconciliationWizard({
   const blocked = !loadingTransactions && (!hasTransactions || upToDateAnswer === false);
 
   const { data: preview } = useQuery({
-    queryKey: ['months', monthId, 'opening-reconciliation', 'preview', currentUser.id],
-    queryFn: () => fetchOpeningReconciliationPreview(monthId, currentUser.id),
-    enabled: step === 'breakdown' || step === 'confirm',
+    queryKey: ['months', monthId, 'opening-reconciliation', 'preview', currentUser.id, initialBalance],
+    queryFn: () => fetchOpeningReconciliationPreview(monthId, currentUser.id, initialBalance),
+    enabled: (step === 'breakdown' || step === 'confirm') && Boolean(initialBalance),
   });
 
   const confirmMutation = useMutation({
-    mutationFn: () => confirmOpeningReconciliation(monthId, { userId: currentUser.id, accountBalance: confirmedBalance }),
+    mutationFn: () =>
+      confirmOpeningReconciliation(monthId, {
+        userId: currentUser.id,
+        accountBalance: initialBalance,
+        confirmedBalance,
+      }),
     onSuccess: (data) => {
       setStep(data.openingReconciliation.matched ? 'success' : 'mismatch');
     },
@@ -698,7 +703,7 @@ function OpeningReconciliationWizard({
                   <span className="font-medium text-ink">{formatCOP(preview.totalSharedExpenses)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-ink-muted">Total Ahorros Conjuntos</span>
+                  <span className="text-ink-muted">Aporte presupuestado a Ahorros Conjuntos</span>
                   <span className="font-medium text-ink">{formatCOP(preview.totalSavings)}</span>
                 </div>
                 <div className="flex justify-between">
@@ -721,7 +726,9 @@ function OpeningReconciliationWizard({
                 </div>
               </div>
               <p className="text-xs text-ink-faint">
-                Haz la transferencia por el valor exacto a mover a Nu y luego confirma el nuevo saldo.
+                "Mover a Nu" puede ser mayor al aporte presupuestado a Ahorros Conjuntos si queda saldo de meses
+                anteriores en la cuenta — ese sobrante se termina de repartir en el cuadre de cierre. Haz la
+                transferencia por el valor exacto a mover a Nu y luego confirma el nuevo saldo.
               </p>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">

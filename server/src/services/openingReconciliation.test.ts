@@ -3,7 +3,7 @@ import {
   accountBalanceMatches,
   expensesToDate,
   leaveInAccountAtOpening,
-  moveToSavingsAtOpening,
+  moveToSavingsFromBalance,
   type ExpenseEntry,
 } from './openingReconciliation';
 
@@ -17,8 +17,12 @@ describe('expensesToDate', () => {
     expect(expensesToDate([personal('-50000'), joint('-132900')]).toString()).toBe('182900');
   });
 
-  it('ignora movement y unclassified', () => {
-    expect(expensesToDate([personal('-50000'), movement('-999999'), unclassified('-1')]).toString()).toBe('50000');
+  it('incluye unclassified -- no exige pasar por Revisar (ticket #31)', () => {
+    expect(expensesToDate([personal('-50000'), unclassified('-30000')]).toString()).toBe('80000');
+  });
+
+  it('ignora movement, sea cual sea el resto', () => {
+    expect(expensesToDate([personal('-50000'), movement('-999999'), unclassified('-1')]).toString()).toBe('50001');
   });
 
   it('un abono positivo (ej. intereses) resta del gastado', () => {
@@ -40,9 +44,17 @@ describe('leaveInAccountAtOpening', () => {
   });
 });
 
-describe('moveToSavingsAtOpening', () => {
-  it('es el aporte completo a Ahorros Conjuntos, sin ajustar', () => {
-    expect(moveToSavingsAtOpening('4118076').toString()).toBe('4118076');
+describe('moveToSavingsFromBalance', () => {
+  it('es el saldo actual menos lo que debe quedar', () => {
+    expect(moveToSavingsFromBalance('8105073.25', '3546664.38').toString()).toBe('4558408.87');
+  });
+
+  it('nunca da negativo -- si el saldo no alcanza, da cero', () => {
+    expect(moveToSavingsFromBalance('1000000', '3546664.38').toString()).toBe('0');
+  });
+
+  it('saldo exacto a lo que debe quedar da cero para mover', () => {
+    expect(moveToSavingsFromBalance('3546664.38', '3546664.38').toString()).toBe('0');
   });
 });
 
@@ -53,5 +65,36 @@ describe('accountBalanceMatches', () => {
 
   it('false cuando hay diferencia, aunque sea de centavos', () => {
     expect(accountBalanceMatches('6825555.91', '6825555.92')).toBe(false);
+  });
+});
+
+describe('regresion -- caso real de John, Agosto 2026 (ticket #31)', () => {
+  // 9 transacciones reales: 2 personales, 4 conjuntas, 3 sin clasificar (incluye un abono de
+  // intereses de 11.46). Aporte a Gastos del Mes 5.490.768,00, a Dinero Personal 1.534.787,92.
+  const entries: ExpenseEntry[] = [
+    joint('-122918'),
+    joint('-132900'),
+    unclassified('-2714009'),
+    unclassified('-68200'),
+    unclassified('-13000'),
+    personal('11.46'),
+    joint('-252876'),
+    joint('-80000'),
+    personal('-95000'),
+  ];
+
+  it('gastos a la fecha da 3.478.891,54 sin exigir clasificacion', () => {
+    expect(expensesToDate(entries).toString()).toBe('3478891.54');
+  });
+
+  it('el cuadre da exacto al saldo real, sin importar remanentes ni el gap de Dinero Personal', () => {
+    const spent = expensesToDate(entries);
+    const leaveInAccount = leaveInAccountAtOpening('5490768', '1534787.92', spent);
+    const accountBalance = '8105073.25';
+    const moveToSavings = moveToSavingsFromBalance(accountBalance, leaveInAccount);
+
+    expect(leaveInAccount.toString()).toBe('3546664.38');
+    expect(moveToSavings.toString()).toBe('4558408.87');
+    expect(leaveInAccount.plus(moveToSavings).toString()).toBe(accountBalance);
   });
 });

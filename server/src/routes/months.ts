@@ -11,7 +11,7 @@ import {
   accountBalanceMatches,
   expensesToDate,
   leaveInAccountAtOpening,
-  moveToSavingsAtOpening,
+  moveToSavingsFromBalance,
 } from '../services/openingReconciliation';
 import { buildMonthExportWorkbook } from '../services/monthExport';
 
@@ -61,7 +61,10 @@ const monthBucketsSchema = z.array(
 
 const openingReconciliationCreateSchema = z.object({
   userId: z.string().uuid().optional(),
+  // Saldo antes de hacer la transferencia -- se usa para calcular cuanto mover a Nu (ticket #31).
   accountBalance: z.union([z.string(), z.number()]),
+  // Saldo despues de hacer la transferencia -- se compara contra "dejar en cuenta" para el match.
+  confirmedBalance: z.union([z.string(), z.number()]),
 });
 
 function badRequest(res: import('express').Response, code: string, message: string): void {
@@ -492,14 +495,17 @@ monthsRouter.get('/:id/export', async (req, res) => {
   res.send(buffer);
 });
 
-// ---- Cuadre de Inicio (ticket #29) ----
+// ---- Cuadre de Inicio (ticket #29, formula corregida en #31) ----
 
 /**
  * Cifras del Cuadre de Inicio para una persona: aporte del mes a Gastos del Mes/Ahorros
- * Conjuntos/Dinero Personal (via el mismo summary que ya usa el dashboard) + lo que ya salio de
- * su cuenta este mes (solo transactions, no quick_entries -- ver notas tecnicas del ticket #29).
+ * Conjuntos/Dinero Personal (via el mismo summary que ya usa el dashboard, solo informativo) +
+ * lo que ya salio de su cuenta este mes (todas sus transactions, clasificadas o no -- solo se
+ * excluye 'movement', ver notas tecnicas del ticket #31). "Mover a Nu" se calcula contra el
+ * saldo actual que digita el usuario, para que el cuadre de exacto sin importar remanentes de
+ * meses anteriores ni el gap estructural de un bucket 'mitad_y_mitad' con ingresos desiguales.
  */
-async function computeOpeningNumbers(month: Month, userId: string) {
+async function computeOpeningNumbers(month: Month, userId: string, accountBalance: string | number | Decimal) {
   const summary = await buildLiveSummary(month);
   const contributionByKind = (kind: string) =>
     summary.buckets
@@ -514,19 +520,21 @@ async function computeOpeningNumbers(month: Month, userId: string) {
   const totalPersonal = contributionByKind('personal');
 
   const ownedTransactions = await prisma.transaction.findMany({
-    where: { monthId: month.id, ownerUserId: userId, type: { in: ['personal', 'joint'] } },
+    where: { monthId: month.id, ownerUserId: userId, type: { not: 'movement' } },
   });
   const expensesToDateAmount = expensesToDate(
-    ownedTransactions.map((tx) => ({ amount: tx.amount, type: tx.type as 'personal' | 'joint' })),
+    ownedTransactions.map((tx) => ({ amount: tx.amount, type: tx.type as 'personal' | 'joint' | 'unclassified' })),
   );
+
+  const leaveInAccount = leaveInAccountAtOpening(totalSharedExpenses, totalPersonal, expensesToDateAmount);
 
   return {
     totalSharedExpenses,
     totalSavings,
     totalPersonal,
     expensesToDateAmount,
-    leaveInAccount: leaveInAccountAtOpening(totalSharedExpenses, totalPersonal, expensesToDateAmount),
-    moveToSavings: moveToSavingsAtOpening(totalSavings),
+    leaveInAccount,
+    moveToSavings: moveToSavingsFromBalance(accountBalance, leaveInAccount),
   };
 }
 
@@ -534,8 +542,13 @@ monthsRouter.get('/:id/opening-reconciliation/preview', async (req, res) => {
   const month = await findMonthOr404(res, req.params.id);
   if (!month) return;
   const userId = typeof req.query.userId === 'string' ? req.query.userId : req.user!.id;
+  const { accountBalance } = req.query;
+  if (typeof accountBalance !== 'string' || !accountBalance) {
+    badRequest(res, 'invalid_query', 'accountBalance es requerido');
+    return;
+  }
 
-  const numbers = await computeOpeningNumbers(month, userId);
+  const numbers = await computeOpeningNumbers(month, userId, accountBalance);
   res.json({
     userId,
     totalSharedExpenses: numbers.totalSharedExpenses.toString(),
@@ -583,16 +596,16 @@ monthsRouter.post('/:id/opening-reconciliation', async (req, res) => {
     return;
   }
   const userId = parsed.data.userId ?? req.user!.id;
-  const accountBalance = new Decimal(parsed.data.accountBalance);
+  const confirmedBalance = new Decimal(parsed.data.confirmedBalance);
 
-  const numbers = await computeOpeningNumbers(month, userId);
-  const matched = accountBalanceMatches(accountBalance, numbers.leaveInAccount);
+  const numbers = await computeOpeningNumbers(month, userId, parsed.data.accountBalance);
+  const matched = accountBalanceMatches(confirmedBalance, numbers.leaveInAccount);
 
   const created = await prisma.openingReconciliation.create({
     data: {
       monthId: month.id,
       userId,
-      accountBalance,
+      accountBalance: confirmedBalance,
       expensesToDate: numbers.expensesToDateAmount,
       leaveInAccount: numbers.leaveInAccount,
       moveToSavings: numbers.moveToSavings,
@@ -612,6 +625,6 @@ monthsRouter.post('/:id/opening-reconciliation', async (req, res) => {
       matched: created.matched,
       createdAt: created.createdAt,
     },
-    diff: accountBalance.minus(numbers.leaveInAccount).toString(),
+    diff: confirmedBalance.minus(numbers.leaveInAccount).toString(),
   });
 });
