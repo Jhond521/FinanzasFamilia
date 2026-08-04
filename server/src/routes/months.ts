@@ -15,6 +15,16 @@ import {
 } from '../services/openingReconciliation';
 import { personSharedExpensesDelta } from '../services/familySavings';
 import { buildMonthExportWorkbook } from '../services/monthExport';
+import { mapTransactionToSheetRow } from '../services/sheetExportMapping';
+import {
+  appendTransactionRows,
+  buildAutoTabName,
+  duplicateTemplateTab,
+  GoogleSheetsNotConfiguredError,
+  SheetLabelNotFoundError,
+  tabExists,
+  writeStartingIncomes,
+} from '../lib/googleSheets';
 
 export const monthsRouter = Router();
 
@@ -750,6 +760,81 @@ monthsRouter.get('/:id/export', async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.send(buffer);
+});
+
+// ---- Boton "Actualizar Sheet" (ticket ##51) ----
+
+const sheetExportSchema = z.object({
+  ownerUserIds: z.array(z.string().uuid()).min(1),
+});
+
+monthsRouter.post('/:id/sheet-export', async (req, res) => {
+  const month = await findMonthOr404(res, req.params.id);
+  if (!month) return;
+
+  const parsed = sheetExportSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'invalid_body', parsed.error.message);
+    return;
+  }
+  const { ownerUserIds } = parsed.data;
+
+  const [pendingCount, users, incomes, transactions] = await Promise.all([
+    prisma.transaction.count({ where: { monthId: month.id, ownerUserId: { in: ownerUserIds }, needsReview: true } }),
+    prisma.user.findMany(),
+    prisma.income.findMany({ where: { monthId: month.id } }),
+    prisma.transaction.findMany({
+      where: { monthId: month.id, ownerUserId: { in: ownerUserIds }, needsReview: false },
+      include: { owner: true },
+      orderBy: { date: 'asc' },
+    }),
+  ]);
+
+  if (pendingCount > 0) {
+    badRequest(res, 'transactions_not_verified', 'Hay transacciones sin verificar para las personas seleccionadas');
+    return;
+  }
+
+  const john = users.find((u) => u.name === 'John');
+  const lina = users.find((u) => u.name === 'Lina');
+  const johnIncome = incomes.find((i) => i.userId === john?.id)?.amount ?? new Decimal(0);
+  const linaIncome = incomes.find((i) => i.userId === lina?.id)?.amount ?? new Decimal(0);
+
+  const monthLabel = `${MESES[month.month - 1]}-${month.year}`;
+  const tabName = buildAutoTabName(monthLabel);
+
+  try {
+    const alreadyExists = await tabExists(tabName);
+    if (!alreadyExists) {
+      await duplicateTemplateTab(tabName);
+      await writeStartingIncomes(tabName, { johnAmount: Number(johnIncome), linaAmount: Number(linaIncome) });
+    }
+
+    const rows = transactions.map((tx) =>
+      mapTransactionToSheetRow({
+        date: toDateOnly(tx.date),
+        detail: tx.detail,
+        bankDescription: tx.bankDescription,
+        bankReference: tx.bankReference,
+        amount: tx.amount,
+        type: tx.type as 'personal' | 'joint' | 'movement',
+        ownerName: tx.owner.name,
+      }),
+    );
+    await appendTransactionRows(tabName, rows);
+
+    res.json({ tabName, transactionsWritten: rows.length, tabCreated: !alreadyExists });
+  } catch (error) {
+    if (error instanceof GoogleSheetsNotConfiguredError) {
+      res.status(500).json({ error: { code: 'sheets_not_configured', message: error.message } });
+      return;
+    }
+    if (error instanceof SheetLabelNotFoundError) {
+      res.status(500).json({ error: { code: 'sheet_layout_mismatch', message: error.message } });
+      return;
+    }
+    res.status(500).json({ error: { code: 'sheet_export_failed', message: error instanceof Error ? error.message : 'No se pudo actualizar el Sheet' } });
+  }
 });
 
 // ---- Cuadre de Inicio (ticket #29, formula corregida en #31) ----

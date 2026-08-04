@@ -561,6 +561,17 @@ export async function updateTransaction(
   return body.transaction;
 }
 
+export type SheetExportResult = { tabName: string; transactionsWritten: number; tabCreated: boolean };
+
+/** Boton "Actualizar Sheet" (ticket ##51): sube las transacciones ya verificadas de las personas
+ * indicadas al tab Auto-[Mes]-[Año] del Google Sheet real. */
+export async function updateSheetExport(monthId: string, ownerUserIds: string[]): Promise<SheetExportResult> {
+  return apiFetch<SheetExportResult>(`/months/${monthId}/sheet-export`, {
+    method: 'POST',
+    body: JSON.stringify({ ownerUserIds }),
+  });
+}
+
 export async function fetchMatchCandidates(transactionId: string): Promise<QuickEntry[]> {
   const body = await apiFetch<{ candidates: QuickEntry[] }>(`/transactions/${transactionId}/match-candidates`);
   return body.candidates;
