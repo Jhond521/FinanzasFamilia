@@ -4,7 +4,7 @@ Convenciones: ids `uuid`, timestamps `created_at`/`updated_at` en todas las tabl
 
 ```
 users
-  id, name ('John'|'Lina'), email UNIQUE, password_hash
+  id, name ('John'|'Lina'), email UNIQUE      -- auth 100% Google OAuth, sin password
 
 months
   id, year INT, month INT, status ('open'|'closed'), closed_at NULL
@@ -77,6 +77,24 @@ card_items                   -- compras itemizadas de la tarjeta
 
 month_summaries              -- congelado al cerrar el mes (JSON con todas las cifras)
   id, month_id FK UNIQUE, data JSONB
+
+opening_reconciliations      -- Cuadre de Inicio (ticket #29): historial, nunca se borra
+  id, month_id FK, user_id FK, account_balance NUMERIC, expenses_to_date NUMERIC,
+  leave_in_account NUMERIC, move_to_savings NUMERIC, matched BOOL
+
+month_closures                -- cierre individual por persona (ticket #34): historial de
+  id, month_id FK, user_id FK, action ('closed'|'reopened')     -- eventos, nunca se borra
+  -- el mes se congela de verdad (months.status='closed') solo cuando ambas personas
+  -- tienen su ultimo evento en 'closed' para ese mes.
+
+family_savings_entries       -- ledger de Ahorros Familiares (ticket #36): nunca se borra solo
+  id, user_id FK, month_id FK NULL, type ('initial'|'monthly_savings'|'adjustment'|'yield'|'manual'),
+  amount NUMERIC, description TEXT
+  -- month_id NULL para saldo inicial y movimientos manuales libres. El saldo de una persona
+  -- es la suma de sus entradas; editable/borrable a mano desde la UI (correcciones).
+
+app_settings                  -- configuracion general (ticket #36): fila unica, get-or-create
+  id, yield_auto_threshold NUMERIC DEFAULT 200000   -- umbral para sugerir "Rendimientos" al cerrar
 ```
 
 ## Cálculos clave (implementar como servicio, con tests)
