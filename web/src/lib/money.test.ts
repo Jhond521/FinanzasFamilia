@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmountDisplay, formatCOP, sanitizeAmountInput } from './money';
+import { bucketPercentUsed, bucketStatus, formatAmountDisplay, formatCOP, sanitizeAmountInput } from './money';
 
 describe('formatCOP', () => {
   it('siempre muestra dos decimales', () => {
@@ -103,5 +103,44 @@ describe('formatAmountDisplay', () => {
 
   it('muestra un "-" solo mientras el usuario sigue escribiendo el numero', () => {
     expect(formatAmountDisplay('-')).toBe('-');
+  });
+});
+
+describe('bucketStatus', () => {
+  it('verde cuando el gasto esta por debajo del 80% del presupuesto', () => {
+    expect(bucketStatus('1000000', '0')).toBe('ok');
+    expect(bucketStatus('1000000', '799999')).toBe('ok');
+  });
+
+  it('amarillo cuando el gasto llega al 80% del presupuesto', () => {
+    expect(bucketStatus('1000000', '800000')).toBe('warning');
+  });
+
+  it('amarillo justo hasta el 100% (no rojo aun)', () => {
+    expect(bucketStatus('1000000', '1000000')).toBe('warning');
+  });
+
+  it('rojo cuando el gasto supera el presupuesto', () => {
+    expect(bucketStatus('1000000', '1000000.01')).toBe('danger');
+  });
+
+  it('presupuesto en cero o negativo siempre da verde', () => {
+    expect(bucketStatus('0', '0')).toBe('ok');
+    expect(bucketStatus('-500', '100')).toBe('ok');
+  });
+});
+
+describe('bucketPercentUsed', () => {
+  it('calcula el porcentaje gastado', () => {
+    expect(bucketPercentUsed('1000000', '250000')).toBe(25);
+  });
+
+  it('acota a 100 cuando el gasto supera el presupuesto', () => {
+    expect(bucketPercentUsed('1000000', '1500000')).toBe(100);
+  });
+
+  it('da 0 cuando el presupuesto es cero o negativo', () => {
+    expect(bucketPercentUsed('0', '500')).toBe(0);
+    expect(bucketPercentUsed('-100', '500')).toBe(0);
   });
 });

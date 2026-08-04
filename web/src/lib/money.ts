@@ -83,6 +83,35 @@ export function formatAmountDisplay(value: string): string {
   return isNegative ? `-${body}` : body;
 }
 
+// ---- Semaforo de bolsas (ticket #44) ----
+
+export type BucketStatus = 'ok' | 'warning' | 'danger';
+
+/** Umbral fijo: a partir de 80% del presupuesto gastado, la bolsa pasa a "amarillo". */
+export const BUCKET_WARNING_THRESHOLD = 0.8;
+
+/**
+ * Estado de semaforo de una bolsa segun cuanto se ha gastado de su presupuesto (ticket #44):
+ * verde si va bien, amarillo si esta cerca del limite (>=80% gastado), rojo si ya se paso.
+ * Un presupuesto <= 0 siempre da 'ok' -- no hay como "acercarse" a un limite de cero.
+ */
+export function bucketStatus(budget: string, spent: string): BucketStatus {
+  const budgetNum = Number(budget);
+  const spentNum = Number(spent);
+  if (budgetNum <= 0) return 'ok';
+  if (spentNum > budgetNum) return 'danger';
+  if (spentNum >= budgetNum * BUCKET_WARNING_THRESHOLD) return 'warning';
+  return 'ok';
+}
+
+/** % gastado de una bolsa respecto a su presupuesto, acotado a [0, 100] para dibujar una barra. */
+export function bucketPercentUsed(budget: string, spent: string): number {
+  const budgetNum = Number(budget);
+  if (budgetNum <= 0) return 0;
+  const pct = (Number(spent) / budgetNum) * 100;
+  return Math.min(100, Math.max(0, pct));
+}
+
 export const MESES = [
   'Enero',
   'Febrero',
