@@ -2,9 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createFamilySavingsEntry,
+  deleteFamilySavingsEntry,
   fetchFamilySavingsEntries,
   fetchFamilySavingsSummary,
   fetchUsers,
+  updateFamilySavingsEntry,
+  type FamilySavingsEntry,
   type FamilySavingsEntryType,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
@@ -38,25 +41,48 @@ export default function FamilySavingsScreen() {
   });
 
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formUserId, setFormUserId] = useState('');
   const [formType, setFormType] = useState<FamilySavingsEntryType>('manual');
   const [formAmount, setFormAmount] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createFamilySavingsEntry({
-        userId: formUserId,
-        type: formType,
-        amount: formAmount,
-        description: formDescription,
-      }),
+  function resetForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setFormUserId('');
+    setFormType('manual');
+    setFormAmount('');
+    setFormDescription('');
+  }
+
+  function startEdit(entry: FamilySavingsEntry) {
+    setEditingId(entry.id);
+    setFormUserId(entry.userId);
+    setFormType(entry.type);
+    setFormAmount(entry.amount);
+    setFormDescription(entry.description);
+    setShowForm(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload = { userId: formUserId, type: formType, amount: formAmount, description: formDescription };
+      return editingId ? updateFamilySavingsEntry(editingId, payload) : createFamilySavingsEntry(payload);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['family-savings'] });
-      setShowForm(false);
-      setFormAmount('');
-      setFormDescription('');
-      setFormType('manual');
+      resetForm();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteFamilySavingsEntry(id),
+    onSuccess: async (_data, id) => {
+      await queryClient.invalidateQueries({ queryKey: ['family-savings'] });
+      setConfirmingDeleteId(null);
+      if (editingId === id) resetForm();
     },
   });
 
@@ -99,7 +125,7 @@ export default function FamilySavingsScreen() {
           </div>
           <button
             type="button"
-            onClick={() => setShowForm((v) => !v)}
+            onClick={() => (showForm ? resetForm() : setShowForm(true))}
             className="rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white hover:bg-brand-hover"
           >
             {showForm ? 'Cancelar' : '+ Agregar movimiento'}
@@ -108,6 +134,7 @@ export default function FamilySavingsScreen() {
 
         {showForm && (
           <div className="flex flex-col gap-3 rounded-xl border border-line bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-ink">{editingId ? 'Editar movimiento' : 'Nuevo movimiento'}</h2>
             <div className="flex flex-wrap gap-3">
               <label className="flex flex-1 min-w-[140px] flex-col gap-1">
                 <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Persona</span>
@@ -153,19 +180,24 @@ export default function FamilySavingsScreen() {
                 className="rounded-lg border border-line px-3 py-2 text-sm text-ink"
               />
             </label>
-            {createMutation.isError && (
+            {saveMutation.isError && (
               <p className="text-sm text-danger">
-                {createMutation.error instanceof Error ? createMutation.error.message : 'No se pudo guardar'}
+                {saveMutation.error instanceof Error ? saveMutation.error.message : 'No se pudo guardar'}
               </p>
             )}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {editingId && (
+                <button type="button" onClick={resetForm} className="px-3 py-2 text-sm text-ink-muted">
+                  Cancelar
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => createMutation.mutate()}
-                disabled={!formUserId || !formAmount || !formDescription || createMutation.isPending}
+                onClick={() => saveMutation.mutate()}
+                disabled={!formUserId || !formAmount || !formDescription || saveMutation.isPending}
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
               >
-                {createMutation.isPending ? 'Guardando…' : 'Guardar'}
+                {saveMutation.isPending ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Guardar'}
               </button>
             </div>
           </div>
@@ -180,6 +212,7 @@ export default function FamilySavingsScreen() {
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Descripción</th>
                 <th className="px-4 py-3 text-right">Monto</th>
+                <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -192,11 +225,43 @@ export default function FamilySavingsScreen() {
                   <td className={`px-4 py-3 text-right font-bold ${Number(entry.amount) < 0 ? 'text-danger' : 'text-ink'}`}>
                     {formatCOP(entry.amount)}
                   </td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {confirmingDeleteId === entry.id ? (
+                      <div className="flex items-center justify-end gap-2 text-xs font-semibold">
+                        <span className="text-ink-muted">¿Seguro?</span>
+                        <button
+                          type="button"
+                          onClick={() => deleteMutation.mutate(entry.id)}
+                          disabled={deleteMutation.isPending}
+                          className="text-danger disabled:opacity-50"
+                        >
+                          Sí, borrar
+                        </button>
+                        <button type="button" onClick={() => setConfirmingDeleteId(null)} className="text-ink-muted">
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-3 text-xs font-semibold">
+                        <button type="button" onClick={() => startEdit(entry)} className="text-brand">
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDeleteId(entry.id)}
+                          className="text-danger"
+                          aria-label={`Borrar ${entry.description}`}
+                        >
+                          Eliminar
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
               {entries?.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-ink-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
                     Todavía no hay movimientos.
                   </td>
                 </tr>

@@ -87,3 +87,47 @@ familySavingsRouter.post('/entries', async (req, res) => {
 
   res.status(201).json({ entry: serializeEntry(created) });
 });
+
+/**
+ * Editar una entrada existente (ticket #49): correcciones de monto/descripcion/tipo/persona.
+ * Sin restriccion por `type` -- una entrada `monthly_savings`/`adjustment`/`yield` tambien se puede
+ * editar; si el mes se vuelve a cerrar, `writeClosingLedgerEntries` (months.ts) la recalcula igual.
+ */
+familySavingsRouter.put('/entries/:id', async (req, res) => {
+  const parsed = createEntrySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { code: 'invalid_body', message: parsed.error.message } });
+    return;
+  }
+
+  const existing = await prisma.familySavingsEntry.findUnique({ where: { id: req.params.id } });
+  if (!existing) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Entrada no encontrada' } });
+    return;
+  }
+
+  const updated = await prisma.familySavingsEntry.update({
+    where: { id: req.params.id },
+    data: {
+      userId: parsed.data.userId,
+      type: parsed.data.type,
+      amount: new Decimal(parsed.data.amount),
+      description: parsed.data.description,
+      monthId: parsed.data.monthId ?? null,
+    },
+  });
+
+  res.json({ entry: serializeEntry(updated) });
+});
+
+/** Borrar una entrada existente (ticket #49). */
+familySavingsRouter.delete('/entries/:id', async (req, res) => {
+  const existing = await prisma.familySavingsEntry.findUnique({ where: { id: req.params.id } });
+  if (!existing) {
+    res.status(404).json({ error: { code: 'not_found', message: 'Entrada no encontrada' } });
+    return;
+  }
+
+  await prisma.familySavingsEntry.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});

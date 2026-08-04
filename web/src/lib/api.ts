@@ -262,18 +262,35 @@ export async function fetchFamilySavingsEntries(params?: {
   return body.entries;
 }
 
-export async function createFamilySavingsEntry(input: {
+export type FamilySavingsEntryInput = {
   userId: string;
   type?: FamilySavingsEntryType;
   amount: string;
   description: string;
   monthId?: string;
-}): Promise<FamilySavingsEntry> {
+};
+
+export async function createFamilySavingsEntry(input: FamilySavingsEntryInput): Promise<FamilySavingsEntry> {
   const body = await apiFetch<{ entry: FamilySavingsEntry }>('/family-savings/entries', {
     method: 'POST',
     body: JSON.stringify(input),
   });
   return body.entry;
+}
+
+export async function updateFamilySavingsEntry(
+  id: string,
+  input: FamilySavingsEntryInput,
+): Promise<FamilySavingsEntry> {
+  const body = await apiFetch<{ entry: FamilySavingsEntry }>(`/family-savings/entries/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.entry;
+}
+
+export async function deleteFamilySavingsEntry(id: string): Promise<void> {
+  await apiFetch<void>(`/family-savings/entries/${id}`, { method: 'DELETE' });
 }
 
 export type MonthComparisonRow = {
