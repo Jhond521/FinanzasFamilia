@@ -26,18 +26,21 @@ describe('buildMonthExportWorkbook', () => {
         name: 'Gastos del Mes',
         percentage: '48',
         budget: '9208727.52',
-        spent: '9850299.52',
-        available: '-641572',
+        spent: '11275695.47',
+        available: '-2066967.95',
         contributions: [
           { userName: 'John', amount: '5490768' },
           { userName: 'Lina', amount: '3717959.52' },
         ],
       },
     ],
-    sharedExpensesExcess: '641572',
+    // Regresion Julio 2026 (ticket #47): John gasto 8,162,194.78 de su presupuesto de 5,490,768
+    // (se paso), Lina gasto 3,113,500.69 de 3,717,959.52 (le sobro) -- cada quien responde por su
+    // propia bolsa, ya no se reparte el excedente del hogar proporcional al ingreso.
+    sharedExpensesExcess: '2066967.95',
     perPersonClose: [
-      { userName: 'John', realSavings: '3735534.22', leaveInAccount: '7025555.92' },
-      { userName: 'Lina', realSavings: '2529439.42', leaveInAccount: '5252747.44' },
+      { userName: 'John', realSavings: '1446649.22', leaveInAccount: '7025555.92' },
+      { userName: 'Lina', realSavings: '3392928.47', leaveInAccount: '5252747.44' },
     ],
     transactions: [
       {
@@ -80,13 +83,13 @@ describe('buildMonthExportWorkbook', () => {
     const workbook = buildMonthExportWorkbook(input);
     const rows = sheetRows(workbook, 'Resumen');
     const gastosRow = rows.find((r) => r[0] === 'Gastos del Mes') as unknown[];
-    expect(gastosRow[4]).toBe(-641572);
+    expect(gastosRow[4]).toBe(-2066967.95);
   });
 
   it('incluye el bloque de cierre con ahorro real y dejar en cuenta por persona', () => {
     const workbook = buildMonthExportWorkbook(input);
     const rows = sheetRows(workbook, 'Resumen');
-    const johnRow = rows.find((r) => r[0] === 'John' && typeof r[1] === 'number' && r[1] === 3735534.22) as unknown[];
+    const johnRow = rows.find((r) => r[0] === 'John' && typeof r[1] === 'number' && r[1] === 1446649.22) as unknown[];
     expect(johnRow[2]).toBe(7025555.92);
   });
 

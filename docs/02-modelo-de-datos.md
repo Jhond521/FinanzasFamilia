@@ -90,7 +90,7 @@ Sea `I_j`, `I_l` los ingresos totales del mes de John y Lina, `T = I_j + I_l`.
 - Las tarjetas (card_items / card_months) NO entran en estos cálculos: son un control independiente; el pago sale de la cuenta de ahorros.
 - `movement` no entra en ningún total.
 - Disponible por bolsa = presupuesto − gastado.
-- Ahorro real de p = aporte de p a Ahorros Conjuntos − exceso imputable (si Gastos del Mes quedó en negativo, el exceso se reparte proporcional al ingreso).
+- Ahorro real de p = aporte de p a Ahorros Conjuntos + (presupuesto de Gastos del Mes de p − lo que p gastó). Cada quien responde por su propia bolsa: **no** se reparte por ingreso (ticket #47) — si p se pasó de su propio presupuesto es un retiro de sus ahorros, si le sobró es un bono. El total del hogar es solo informativo.
 - Dejar en cuenta de p = aporte a Gastos del Mes + Dinero Personal de p (cifra informativa del día 1).
 
 ## Deduplicación (algoritmo)

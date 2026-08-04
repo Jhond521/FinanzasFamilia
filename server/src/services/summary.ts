@@ -14,19 +14,18 @@ export function sharedExpensesExcess(budget: DecimalInput, spent: DecimalInput):
 }
 
 /**
- * Ahorro real de una persona: su aporte a Ahorros Conjuntos menos la parte que le toca del
- * exceso de Gastos del Mes, repartida proporcional a su ingreso (misma proporcion que
- * personContribution con splitMode='proportional', no una formula nueva). Con total=0 la
- * parte proporcional es 0 -- misma convencion que personContribution para evitar dividir por cero.
+ * Ahorro real de una persona: su aporte a Ahorros Conjuntos mas su propio delta de Gastos del
+ * Mes (presupuesto de esa persona menos lo que gasto). Cada quien responde por su propia bolsa
+ * -- no se reparte el exceso del hogar por ingreso (ticket #47: el reparto proporcional
+ * terminaba subsidiando a quien se pasaba con el subgasto de la otra persona).
  */
 export function realSavingsContribution(
   savingsContribution: DecimalInput,
-  personIncome: DecimalInput,
-  total: Decimal,
-  excess: Decimal,
+  personSharedBudget: DecimalInput,
+  personSharedSpent: DecimalInput,
 ): Decimal {
-  const excessShare = total.isZero() ? new Decimal(0) : excess.mul(personIncome).div(total);
-  return new Decimal(savingsContribution).minus(excessShare);
+  const delta = new Decimal(personSharedBudget).minus(personSharedSpent);
+  return new Decimal(savingsContribution).plus(delta);
 }
 
 /**

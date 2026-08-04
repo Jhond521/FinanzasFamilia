@@ -1,9 +1,5 @@
-import { Prisma } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
-import { totalIncome } from './distribution';
 import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from './summary';
-
-const { Decimal } = Prisma;
 
 describe('sharedExpensesExcess', () => {
   it('es cero si lo gastado no supero el presupuesto', () => {
@@ -20,24 +16,16 @@ describe('sharedExpensesExcess', () => {
 });
 
 describe('realSavingsContribution', () => {
-  it('sin exceso, el ahorro real es igual al aporte a Ahorros Conjuntos', () => {
-    const total = new Decimal(100);
-    const excess = new Decimal(0);
-    expect(realSavingsContribution('4118076', 60, total, excess).toString()).toBe('4118076');
+  it('sin sobregasto ni bono (presupuesto == gastado), el ahorro real es igual al aporte a Ahorros Conjuntos', () => {
+    expect(realSavingsContribution('4118076', '5490768', '5490768').toString()).toBe('4118076');
   });
 
-  it('reparte el exceso proporcional al ingreso (numeros simples)', () => {
-    const total = new Decimal(100);
-    const excess = new Decimal(50);
-    // John gana 60/100, Lina 40/100 -> exceso 30 y 20 respectivamente.
-    expect(realSavingsContribution('1000', 60, total, excess).toString()).toBe('970');
-    expect(realSavingsContribution('1000', 40, total, excess).toString()).toBe('980');
+  it('resta el sobregasto individual del ahorro real (delta negativo)', () => {
+    expect(realSavingsContribution('4118076', '5490768.00', '8162194.78').toString()).toBe('1446649.22');
   });
 
-  it('con total=0 la parte proporcional es 0 (evita dividir por cero, igual que personContribution)', () => {
-    const total = new Decimal(0);
-    const excess = new Decimal(50);
-    expect(realSavingsContribution('0', 0, total, excess).toString()).toBe('0');
+  it('suma el bono individual del ahorro real (delta positivo, se gasto menos de SU presupuesto)', () => {
+    expect(realSavingsContribution('2788469.64', '3717959.52', '3113500.69').toString()).toBe('3392928.47');
   });
 });
 
@@ -52,32 +40,22 @@ describe('leaveInAccount', () => {
   });
 });
 
-describe('ahorro real + dejar en cuenta — regresion Junio 2026', () => {
-  // Mismo dataset que distribution.test.ts: ingresos 11,439,100 (John) + 7,745,749 (Lina),
-  // Gastos del Mes presupuestado en 9,208,727.52 (48% de 19,184,849).
-  const john = { userId: 'john', amount: '11439100' };
-  const lina = { userId: 'lina', amount: '7745749' };
-  const total = totalIncome([john, lina]);
-  const sharedExpensesBudget = new Decimal('9208727.52');
+describe('ahorro real — regresion Julio 2026 (ticket #47)', () => {
+  // Caso real de produccion: con el reparto proporcional viejo, el subgasto de Lina (604,458.83)
+  // terminaba subsidiando el sobregasto de John -- 1,438,982.73 mal asignados en cada direccion.
+  // El fix calcula el delta de cada persona contra SU propio presupuesto de Gastos del Mes.
+  it('cada persona usa su propio delta, no el excedente del hogar repartido por ingreso', () => {
+    const johnReal = realSavingsContribution('4118076', '5490768.00', '8162194.78');
+    const linaReal = realSavingsContribution('2788469.64', '3717959.52', '3113500.69');
 
-  it('la suma de las partes del exceso repartidas es igual al exceso total (sin perder centavos)', () => {
-    const spent = '9850299.52'; // se paso por 641,572, igual al ejemplo de design_specs
-    const excess = sharedExpensesExcess(sharedExpensesBudget, spent);
-    const johnShare = new Decimal(john.amount).mul(excess).div(total);
-    const linaShare = new Decimal(lina.amount).mul(excess).div(total);
-    expect(johnShare.plus(linaShare).toString()).toBe(excess.toString());
+    expect(johnReal.toString()).toBe('1446649.22');
+    expect(linaReal.toString()).toBe('3392928.47');
   });
 
-  it('el ahorro real total baja exactamente el exceso total frente al aporte simple total', () => {
-    const johnSavingsContribution = '4118076'; // de distribution.test.ts
-    const linaSavingsContribution = '2788469.64';
-    const spent = '9850299.52';
-    const excess = sharedExpensesExcess(sharedExpensesBudget, spent);
+  it('la suma del ahorro real de ambos no cambia frente al calculo household (el fix redistribuye, no crea ni destruye plata)', () => {
+    const johnReal = realSavingsContribution('4118076', '5490768.00', '8162194.78');
+    const linaReal = realSavingsContribution('2788469.64', '3717959.52', '3113500.69');
 
-    const johnReal = realSavingsContribution(johnSavingsContribution, john.amount, total, excess);
-    const linaReal = realSavingsContribution(linaSavingsContribution, lina.amount, total, excess);
-    const totalSavingsSimple = new Decimal(johnSavingsContribution).plus(linaSavingsContribution);
-
-    expect(totalSavingsSimple.minus(johnReal.plus(linaReal)).toString()).toBe(excess.toString());
+    expect(johnReal.plus(linaReal).toString()).toBe('4839577.69');
   });
 });
