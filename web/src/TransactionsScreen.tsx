@@ -6,6 +6,7 @@ import {
   fetchMonths,
   fetchTransactions,
   fetchUsers,
+  updateSheetExport,
   updateTransaction,
   type TransactionType,
 } from './lib/api';
@@ -76,6 +77,21 @@ export default function TransactionsScreen() {
     },
   });
 
+  // Boton "Actualizar Sheet" (ticket ##51): reusa el mismo filtro Yo/Lina/Ambos de arriba para
+  // decidir a quien exportar. Se habilita solo si esas personas no tienen nada sin verificar.
+  const { data: pendingForSheetExport } = useQuery({
+    queryKey: ['transactions', selectedMonthId, { needsReview: true, ownerUserId }],
+    queryFn: () => fetchTransactions({ monthId: selectedMonthId!, ownerUserId, needsReview: true }),
+    enabled: Boolean(selectedMonthId),
+  });
+
+  const sheetExportMutation = useMutation({
+    mutationFn: () => {
+      const exportOwnerIds = ownerUserId ? [ownerUserId] : (users?.map((u) => u.id) ?? []);
+      return updateSheetExport(selectedMonthId!, exportOwnerIds);
+    },
+  });
+
   return (
     <div className="min-h-screen bg-cream">
       <NavBar />
@@ -126,37 +142,64 @@ export default function TransactionsScreen() {
         </div>
 
         {currentUser && (
-          <div className="flex gap-2 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setOwnerFilter(currentUser.id)}
-              className={`rounded-full px-3 py-1.5 ${
-                selectedOwnerFilter === currentUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
-              }`}
-            >
-              Yo
-            </button>
-            {otherUser && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-2 text-xs font-semibold">
               <button
                 type="button"
-                onClick={() => setOwnerFilter(otherUser.id)}
+                onClick={() => setOwnerFilter(currentUser.id)}
                 className={`rounded-full px-3 py-1.5 ${
-                  selectedOwnerFilter === otherUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+                  selectedOwnerFilter === currentUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
                 }`}
               >
-                {otherUser.name}
+                Yo
               </button>
-            )}
+              {otherUser && (
+                <button
+                  type="button"
+                  onClick={() => setOwnerFilter(otherUser.id)}
+                  className={`rounded-full px-3 py-1.5 ${
+                    selectedOwnerFilter === otherUser.id ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+                  }`}
+                >
+                  {otherUser.name}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOwnerFilter('all')}
+                className={`rounded-full px-3 py-1.5 ${
+                  selectedOwnerFilter === 'all' ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
+                }`}
+              >
+                Ambos
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setOwnerFilter('all')}
-              className={`rounded-full px-3 py-1.5 ${
-                selectedOwnerFilter === 'all' ? 'bg-brand-light text-brand' : 'border border-line text-ink-muted'
-              }`}
+              onClick={() => sheetExportMutation.mutate()}
+              disabled={Boolean(pendingForSheetExport?.length) || sheetExportMutation.isPending}
+              title={
+                pendingForSheetExport?.length
+                  ? 'Hay transacciones sin verificar para esta selección'
+                  : 'Sube las transacciones verificadas al Google Sheet'
+              }
+              className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink-soft hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Ambos
+              {sheetExportMutation.isPending ? 'Actualizando…' : 'Actualizar Sheet'}
             </button>
           </div>
+        )}
+
+        {sheetExportMutation.isSuccess && (
+          <p className="text-sm text-success">
+            {sheetExportMutation.data.transactionsWritten} transacción(es) agregadas a "{sheetExportMutation.data.tabName}
+            "{sheetExportMutation.data.tabCreated ? ' (tab creado)' : ''}.
+          </p>
+        )}
+        {sheetExportMutation.isError && (
+          <p className="text-sm text-danger">
+            {sheetExportMutation.error instanceof Error ? sheetExportMutation.error.message : 'No se pudo actualizar el Sheet'}
+          </p>
         )}
 
         <div className="overflow-x-auto rounded-2xl border border-line bg-white">
