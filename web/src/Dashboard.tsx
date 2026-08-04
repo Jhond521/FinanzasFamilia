@@ -28,8 +28,9 @@ import {
   type MonthDetail,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
-import { formatCOP, MESES } from './lib/money';
+import { bucketPercentUsed, bucketStatus, formatCOP, MESES, type BucketStatus } from './lib/money';
 import NavBar from './NavBar';
+import type { MonthSummaryDetail } from './lib/api';
 
 const BUCKET_KIND_LABEL: Record<string, string> = {
   savings: 'Ahorro',
@@ -37,6 +38,60 @@ const BUCKET_KIND_LABEL: Record<string, string> = {
   shared_expenses: 'Gasto conjunto',
   other: 'Otro',
 };
+
+// Semaforo de 3 estados por bolsa (ticket #44): mismos tokens de color de tailwind.config.js
+// (success/warning/danger) usados en el resto de la app.
+const STATUS_TEXT_CLASS: Record<BucketStatus, string> = {
+  ok: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger',
+};
+const STATUS_BAR_CLASS: Record<BucketStatus, string> = {
+  ok: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
+};
+
+function BucketProgressBar({ status, percentUsed }: { status: BucketStatus; percentUsed: number }) {
+  return (
+    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-cream-surface">
+      <div className={`h-full rounded-full ${STATUS_BAR_CLASS[status]}`} style={{ width: `${percentUsed}%` }} />
+    </div>
+  );
+}
+
+// ---- Resumen del mes (ticket #44): ingresos vs. gastado total, consolidado arriba del dashboard ----
+
+function MonthOverviewCard({ summary }: { summary: MonthSummaryDetail }) {
+  const spendingBuckets = summary.buckets.filter((b) => b.kind === 'shared_expenses' || b.kind === 'personal');
+  const totalBudget = spendingBuckets.reduce((sum, b) => sum + Number(b.budget), 0);
+  const totalSpent = spendingBuckets.reduce((sum, b) => sum + Number(b.spent), 0);
+  const totalAvailable = totalBudget - totalSpent;
+  const status = bucketStatus(String(totalBudget), String(totalSpent));
+
+  return (
+    <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-sm font-medium text-ink-muted">Resumen del mes</h2>
+      <div className="flex flex-wrap gap-x-6 gap-y-3">
+        <div>
+          <div className="text-xs text-ink-faint">Ingresos totales</div>
+          <div className="text-lg font-semibold text-ink">{formatCOP(summary.totalIncome)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-ink-faint">Gastado (conjunto + personal)</div>
+          <div className="text-lg font-semibold text-ink">{formatCOP(String(totalSpent))}</div>
+        </div>
+        <div>
+          <div className="text-xs text-ink-faint">Disponible</div>
+          <div className={`text-lg font-semibold ${STATUS_TEXT_CLASS[status]}`}>
+            {formatCOP(String(totalAvailable))}
+          </div>
+        </div>
+      </div>
+      <BucketProgressBar status={status} percentUsed={bucketPercentUsed(String(totalBudget), String(totalSpent))} />
+    </section>
+  );
+}
 
 /** True si el mes calendario (year/month, 1-indexado) ya termino -- hoy cayo en el primer dia del
  * mes siguiente o despues (ticket #33: no se debe poder cerrar un mes que sigue en curso). */
@@ -241,6 +296,8 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
         </div>
       )}
 
+      {summary && <MonthOverviewCard summary={summary} />}
+
       {(Boolean(needsReview?.length) || Boolean(pendingQuickEntries?.length)) && (
         <div className="flex flex-wrap gap-4 text-sm">
           {Boolean(needsReview?.length) && (
@@ -302,7 +359,7 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           </h2>
           {summary.buckets.map((bucket) => {
             const tracksSpending = bucket.kind === 'shared_expenses' || bucket.kind === 'personal';
-            const isOverspent = tracksSpending && Number(bucket.available) < 0;
+            const status = bucketStatus(bucket.budget, bucket.spent);
             return (
               <div key={bucket.id} className="rounded-xl border border-line bg-white p-4 shadow-sm">
                 <div className="flex items-center justify-between">
@@ -313,12 +370,15 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                 </div>
                 <p className="mt-1 text-lg font-semibold text-ink">{formatCOP(bucket.budget)}</p>
                 {tracksSpending && (
-                  <div className="mt-1 flex items-center gap-2 text-xs">
-                    <span className="text-ink-muted">Gastado {formatCOP(bucket.spent)}</span>
-                    <span className={`font-semibold ${isOverspent ? 'text-danger' : 'text-success'}`}>
-                      Disponible {formatCOP(bucket.available)}
-                    </span>
-                  </div>
+                  <>
+                    <BucketProgressBar status={status} percentUsed={bucketPercentUsed(bucket.budget, bucket.spent)} />
+                    <div className="mt-1 flex items-center gap-2 text-xs">
+                      <span className="text-ink-muted">Gastado {formatCOP(bucket.spent)}</span>
+                      <span className={`font-semibold ${STATUS_TEXT_CLASS[status]}`}>
+                        Disponible {formatCOP(bucket.available)}
+                      </span>
+                    </div>
+                  </>
                 )}
                 <div className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
                   {bucket.contributions.map((c) => (
