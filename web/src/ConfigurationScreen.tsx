@@ -112,7 +112,7 @@ export default function ConfigurationScreen() {
                 placeholder="Patron (ej. CARULLA)"
                 value={draft.pattern}
                 onChange={(e) => setDraft({ ...draft, pattern: e.target.value })}
-                className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm sm:col-span-1"
+                className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
               />
               <select
                 value={draft.setType}
@@ -150,7 +150,7 @@ export default function ConfigurationScreen() {
                 placeholder="Detalle (opcional)"
                 value={draft.setDetail}
                 onChange={(e) => setDraft({ ...draft, setDetail: e.target.value })}
-                className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm sm:col-span-1"
+                className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
               />
               <button
                 type="button"
@@ -313,7 +313,7 @@ function BucketsSection() {
             placeholder="Nombre"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-            className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm sm:col-span-1"
+            className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
           />
           <input
             type="text"
@@ -321,7 +321,7 @@ function BucketsSection() {
             placeholder="%"
             value={draft.percentage}
             onChange={(e) => setDraft({ ...draft, percentage: e.target.value })}
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-lg border border-line px-3 py-2 text-sm text-ink"
           />
           <select
             value={draft.splitMode}
@@ -389,7 +389,7 @@ function BucketRow({ bucket, onUpdate }: { bucket: Bucket; onUpdate: (input: Par
             value={percentage}
             onChange={(e) => setPercentage(e.target.value)}
             onBlur={() => percentage !== bucket.percentage && onUpdate({ percentage })}
-            className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm"
+            className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm text-ink"
           />
           <span className="text-sm text-ink-muted">%</span>
         </div>

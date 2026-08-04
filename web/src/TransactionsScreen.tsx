@@ -121,7 +121,7 @@ export default function TransactionsScreen() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar descripcion…"
-            className="ml-auto rounded-lg border border-line px-3 py-2 text-sm"
+            className="ml-auto rounded-lg border border-line px-3 py-2 text-sm text-ink"
           />
         </div>
 

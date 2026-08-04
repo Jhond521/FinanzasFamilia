@@ -191,7 +191,7 @@ export default function QuickEntry({ currentUser }: Props) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Almuerzo con Camila"
-            className="rounded-lg border border-line px-3 py-2 text-base"
+            className="rounded-lg border border-line px-3 py-2 text-base text-ink"
           />
         </label>
 

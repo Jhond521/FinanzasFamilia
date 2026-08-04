@@ -249,7 +249,7 @@ export default function CardsScreen() {
                         onChange={(e) =>
                           setPreviewRows((prev) => prev.map((r, i) => (i === index ? { ...r, date: e.target.value } : r)))
                         }
-                        className="rounded border border-line px-2 py-1"
+                        className="rounded border border-line px-2 py-1 text-ink"
                       />
                       <input
                         type="text"
@@ -257,7 +257,7 @@ export default function CardsScreen() {
                         onChange={(e) =>
                           setPreviewRows((prev) => prev.map((r, i) => (i === index ? { ...r, description: e.target.value } : r)))
                         }
-                        className="rounded border border-line px-2 py-1"
+                        className="rounded border border-line px-2 py-1 text-ink"
                       />
                       <input
                         type="text"
@@ -265,7 +265,7 @@ export default function CardsScreen() {
                         onChange={(e) =>
                           setPreviewRows((prev) => prev.map((r, i) => (i === index ? { ...r, amount: e.target.value } : r)))
                         }
-                        className="rounded border border-line px-2 py-1 text-right"
+                        className="rounded border border-line px-2 py-1 text-right text-ink"
                       />
                       <select
                         value={row.type}
@@ -370,7 +370,7 @@ function ItemForm({
         placeholder="Descripción"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm sm:col-span-1"
+        className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
       />
       <input
         type="date"
