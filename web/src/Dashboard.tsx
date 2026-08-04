@@ -381,17 +381,26 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                   </>
                 )}
                 <div className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
-                  {bucket.contributions.map((c) => (
-                    <div key={c.userId} className="flex justify-between">
-                      <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
-                      <span>
-                        {formatCOP(c.amount)}
-                        {c.spent !== undefined && (
-                          <span className="ml-2 text-xs text-ink-faint">gastado {formatCOP(c.spent)}</span>
-                        )}
-                      </span>
-                    </div>
-                  ))}
+                  {bucket.contributions.map((c) => {
+                    // Semaforo tambien por persona (ticket #44): cuanto gasto cada uno contra su
+                    // propia porcion del presupuesto de la bolsa, no solo el agregado.
+                    const contributionStatus = c.spent !== undefined ? bucketStatus(c.amount, c.spent) : undefined;
+                    return (
+                      <div key={c.userId} className="flex justify-between">
+                        <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
+                        <span>
+                          {formatCOP(c.amount)}
+                          {c.spent !== undefined && (
+                            <span
+                              className={`ml-2 text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
+                            >
+                              gastado {formatCOP(c.spent)}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

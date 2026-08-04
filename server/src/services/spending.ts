@@ -46,3 +46,15 @@ export function personalSpent(entries: SpendingEntry[], userId: string): Decimal
     .filter((entry) => entry.type === 'personal' && entry.userId === userId)
     .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
 }
+
+/**
+ * Gastado conjunto atribuido a una persona: suma de sus registros tipo 'joint' (quien hizo el
+ * gasto, segun `userId`/`ownerUserId` de la entrada -- no a quien "le toca" pagarlo). Se usa para
+ * mostrar el desglose individual dentro de la bolsa Gastos del Mes (ticket #44), igual que
+ * `personalSpent` ya hace para la bolsa personal.
+ */
+export function jointSpentByUser(entries: SpendingEntry[], userId: string): Decimal {
+  return entries
+    .filter((entry) => entry.type === 'joint' && entry.userId === userId)
+    .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
+}

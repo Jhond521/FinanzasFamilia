@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { jointSpent, personalSpent, type SpendingEntry } from './spending';
+import { jointSpent, jointSpentByUser, personalSpent, type SpendingEntry } from './spending';
 
-const joint = (amount: string, status: SpendingEntry['status'] = 'pending'): SpendingEntry => ({
-  userId: 'john',
+const joint = (amount: string, status: SpendingEntry['status'] = 'pending', userId = 'john'): SpendingEntry => ({
+  userId,
   amount,
   type: 'joint',
   status,
@@ -66,5 +66,32 @@ describe('personalSpent', () => {
   it('acepta entradas sin status (transactions de Fase 3), siempre cuentan', () => {
     const entry: SpendingEntry = { userId: 'john', amount: '-100', type: 'personal' };
     expect(personalSpent([entry], 'john').toString()).toBe('100');
+  });
+});
+
+describe('jointSpentByUser', () => {
+  it('suma solo los registros conjuntos de la persona pedida', () => {
+    const entries = [
+      joint('-50000', 'pending', 'john'),
+      joint('-30000', 'pending', 'lina'),
+      joint('-20000', 'pending', 'john'),
+    ];
+    expect(jointSpentByUser(entries, 'john').toString()).toBe('70000');
+    expect(jointSpentByUser(entries, 'lina').toString()).toBe('30000');
+  });
+
+  it('ignora registros de tipo personal', () => {
+    expect(jointSpentByUser([personal('john', '-100'), joint('-200', 'pending', 'john')], 'john').toString()).toBe(
+      '200',
+    );
+  });
+
+  it('excluye registros con status matched', () => {
+    const entries = [joint('-100', 'pending', 'john'), joint('-50', 'matched', 'john')];
+    expect(jointSpentByUser(entries, 'john').toString()).toBe('100');
+  });
+
+  it('persona sin registros da cero', () => {
+    expect(jointSpentByUser([joint('-100', 'pending', 'john')], 'lina').toString()).toBe('0');
   });
 });

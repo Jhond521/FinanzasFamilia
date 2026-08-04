@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
 import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
-import { jointSpent, personalSpent } from '../services/spending';
+import { jointSpent, jointSpentByUser, personalSpent } from '../services/spending';
 import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '../services/summary';
 import {
   accountBalanceMatches,
@@ -145,7 +145,12 @@ async function buildLiveSummary(month: Month) {
   const buckets = monthBuckets.map((bucket) => {
     const budget = bucketBudget(bucket, total);
     const contributions = incomes.map((income) => {
-      const spent = bucket.kind === 'personal' ? personalSpent(spendingEntries, income.userId) : null;
+      const spent =
+        bucket.kind === 'personal'
+          ? personalSpent(spendingEntries, income.userId)
+          : bucket.kind === 'shared_expenses'
+            ? jointSpentByUser(spendingEntries, income.userId)
+            : null;
       const amount = personContribution(bucket, budget, income.amount, total);
 
       const byUser =
