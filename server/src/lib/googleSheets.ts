@@ -1,12 +1,14 @@
 import { google } from 'googleapis';
-import { findLabelRowIndex, type SheetTransactionRow } from '../services/sheetExportMapping';
+import { findFirstBlankRowIndex, findLabelRowIndex, type SheetTransactionRow } from '../services/sheetExportMapping';
 
 /** Tab plantilla real del Sheet (ticket ##51) -- confirmado por John, no "Template". */
 const TEMPLATE_TAB_NAME = 'Plantilla 26';
 
-/** Columna donde viven los labels que ubicamos por texto ("Ingreso Mes John...", "Fecha"). */
+/** Columna donde viven los labels que ubicamos por texto ("Ingreso Mes John...", "Fecha"). Rango
+ * generoso (1000 filas) para poder encontrar la primera fila vacia aunque el tab ya tenga varios
+ * meses de transacciones escritas encima. */
 const LABEL_COLUMN = 'B';
-const LABEL_COLUMN_RANGE = `${LABEL_COLUMN}1:${LABEL_COLUMN}60`;
+const LABEL_COLUMN_RANGE = `${LABEL_COLUMN}1:${LABEL_COLUMN}1000`;
 
 /** Primera y ultima columna de la tabla de transacciones: Fecha..Quien (ver mapTransactionToSheetRow). */
 const TRANSACTION_FIRST_COLUMN = 'B';
@@ -115,8 +117,15 @@ export async function writeStartingIncomes(
   });
 }
 
-/** Agrega filas de transacciones al final de la tabla existente del tab (ticket ##51). Ubica el
- * header "Fecha" dinamicamente -- no asume un numero de fila fijo, porque no esta 100% confirmado. */
+/**
+ * Agrega filas de transacciones al final de la tabla existente del tab (ticket ##51). Ubica el
+ * header "Fecha" y la primera fila ya vacia debajo, y ESCRIBE ahi (`values.update`) -- a proposito
+ * no usa `values.append`/`INSERT_ROWS`: insertar filas nuevas las crea sin el formato/validacion
+ * que ya trae la plantilla, y ademas desplaza hacia abajo las formulas de resumen del sheet (bug
+ * detectado al probar la primera version de este ticket). Escribir en las filas que la plantilla ya
+ * trae pre-formateadas y vacias evita ambos problemas: nada se mueve, y la celda ya tenia el
+ * formato/dropdown correcto de antes.
+ */
 export async function appendTransactionRows(tabName: string, rows: SheetTransactionRow[]): Promise<void> {
   if (rows.length === 0) return;
   const { spreadsheetId } = readConfig();
@@ -126,15 +135,15 @@ export async function appendTransactionRows(tabName: string, rows: SheetTransact
   const headerRow = findLabelRowIndex(column, 'Fecha');
   if (headerRow === null) throw new SheetLabelNotFoundError('Fecha', tabName);
 
-  // Rango desde el header en adelante: la API de append detecta la ultima fila con datos DENTRO de
-  // este rango y agrega las nuevas justo despues -- por eso hay que arrancar en el header, si no
-  // confundiria con datos de otras secciones del tab que estan en las mismas columnas mas arriba.
-  const range = `'${tabName}'!${TRANSACTION_FIRST_COLUMN}${headerRow + 1}:${TRANSACTION_LAST_COLUMN}`;
-  await sheets.spreadsheets.values.append({
+  const firstBlankRow = findFirstBlankRowIndex(column, headerRow);
+  const startRow = firstBlankRow + 1; // fila 1-based del Sheet
+  const endRow = startRow + rows.length - 1;
+
+  const range = `'${tabName}'!${TRANSACTION_FIRST_COLUMN}${startRow}:${TRANSACTION_LAST_COLUMN}${endRow}`;
+  await sheets.spreadsheets.values.update({
     spreadsheetId,
     range,
     valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
   });
 }

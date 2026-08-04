@@ -40,3 +40,20 @@ export function findLabelRowIndex(columnValues: unknown[], label: string): numbe
   const idx = columnValues.findIndex((cell) => typeof cell === 'string' && cell.trim().startsWith(label));
   return idx === -1 ? null : idx;
 }
+
+/**
+ * Indice (0-based) de la primera celda vacia de una columna, buscando estrictamente DESPUES de
+ * `afterIndex`. Se usa para encontrar la primera fila ya vacia (y ya formateada por la plantilla)
+ * debajo del header "Fecha", para ESCRIBIR ahi en vez de insertar filas nuevas -- insertar filas
+ * (Sheets API `INSERT_ROWS`) crea filas en blanco sin el formato/validacion que ya trae la
+ * plantilla, y ademas desplaza hacia abajo cualquier formula que dependa de esas filas (bug
+ * reportado tras el primer intento del ticket ##51). Si no encuentra ninguna celda vacia dentro
+ * del rango leido, devuelve `columnValues.length` (escribir justo despues de lo leido).
+ */
+export function findFirstBlankRowIndex(columnValues: unknown[], afterIndex: number): number {
+  for (let i = afterIndex + 1; i < columnValues.length; i++) {
+    const cell = columnValues[i];
+    if (cell === undefined || cell === null || cell === '') return i;
+  }
+  return columnValues.length;
+}

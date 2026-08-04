@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findLabelRowIndex, mapTransactionToSheetRow } from './sheetExportMapping';
+import { findFirstBlankRowIndex, findLabelRowIndex, mapTransactionToSheetRow } from './sheetExportMapping';
 
 describe('mapTransactionToSheetRow', () => {
   it('mapea una transaccion personal al orden de columnas del Sheet', () => {
@@ -87,5 +87,32 @@ describe('findLabelRowIndex', () => {
 
   it('no matchea una coincidencia parcial en medio del texto (solo al inicio)', () => {
     expect(findLabelRowIndex(['Total Ingreso Mes John'], 'Ingreso Mes John')).toBeNull();
+  });
+});
+
+describe('findFirstBlankRowIndex', () => {
+  it('encuentra la primera fila vacia despues del header, con filas ya escritas en medio', () => {
+    const column = ['Fecha', '2026-07-01', '2026-07-02', '', '', ''];
+    expect(findFirstBlankRowIndex(column, 0)).toBe(3);
+  });
+
+  it('sin ninguna fila escrita, la primera vacia es justo despues del header', () => {
+    const column = ['Fecha', '', '', ''];
+    expect(findFirstBlankRowIndex(column, 0)).toBe(1);
+  });
+
+  it('trata undefined y null igual que string vacio', () => {
+    const column = ['Fecha', '2026-07-01', undefined, null];
+    expect(findFirstBlankRowIndex(column, 0)).toBe(2);
+  });
+
+  it('ignora filas escritas ANTES de afterIndex (no busca hacia atras)', () => {
+    const column = ['', 'Fecha', '2026-07-01', ''];
+    expect(findFirstBlankRowIndex(column, 1)).toBe(3);
+  });
+
+  it('si no hay ninguna fila vacia en el rango leido, devuelve la longitud (escribir justo despues)', () => {
+    const column = ['Fecha', '2026-07-01', '2026-07-02'];
+    expect(findFirstBlankRowIndex(column, 0)).toBe(3);
   });
 });
