@@ -552,6 +552,16 @@ function MonthClosureWizard({
     enabled: step === 'breakdown' || step === 'finalBalance' || step === 'result',
   });
 
+  // Presupuesto de ahorro del mes que entra (ej. Agosto al cerrar Julio) -- paso #42, para indicar
+  // cuanto mover a Ahorros Conjuntos por ese mes durante ESTE cierre.
+  const { data: nextMonthPreview } = useQuery({
+    queryKey: ['months', nextMonthId, 'close-preview', currentUser.id],
+    queryFn: () => fetchClosePreview(nextMonthId!, currentUser.id),
+    enabled: step === 'breakdown' && Boolean(nextMonthId),
+  });
+  const nextMonthLabel =
+    monthNumber === 12 ? `${MESES[0]} ${monthYear + 1}` : `${MESES[monthNumber]} ${monthYear}`;
+
   const { data: pastEntries } = useQuery({
     queryKey: ['family-savings', 'entries', currentUser.id, 'closure-wizard'],
     queryFn: () => fetchFamilySavingsEntries({ userId: currentUser.id }),
@@ -571,6 +581,24 @@ function MonthClosureWizard({
   // importar a que mes quede atribuida en el ledger.
   const netSavings = preview ? Number(preview.monthlySavingsBudget) : undefined;
   const adjustment = preview ? Number(preview.adjustment) : undefined;
+
+  // Guia accionable del paso `breakdown` (ticket #42): cuanto mover en Nu y que saldo debe quedar
+  // tras cada movimiento. "nuBalance" es el saldo general de Nu (no la cajita de Ahorros Conjuntos)
+  // que se pregunta al inicio del wizard.
+  const nuBalanceNum = Number(nuBalance || '0');
+  // Paso 1: ajuste de Ahorros Conjuntos del mes que cierra. Ingresar a ahorros resta del saldo
+  // general; retirar de ahorros suma -- por eso siempre se resta el ajuste (su signo ya indica la
+  // direccion: negativo = retirar, positivo = ingresar).
+  const checkpointAfterAdjustment = adjustment !== undefined ? nuBalanceNum - adjustment : undefined;
+  // Paso 2: ahorros del mes que entra (ej. Agosto), ya descontado el gasto grande de este cierre.
+  const nextMonthSavingsBudget = nextMonthPreview ? Number(nextMonthPreview.monthlySavingsBudget) : undefined;
+  const nextMonthSavingsToMove =
+    nextMonthSavingsBudget !== undefined ? nextMonthSavingsBudget - bigExpenseValue : undefined;
+  const checkpointAfterNextMonthSavings =
+    checkpointAfterAdjustment !== undefined && nextMonthSavingsToMove !== undefined
+      ? checkpointAfterAdjustment - nextMonthSavingsToMove
+      : undefined;
+
   const balanceSoFar = pastEntries?.reduce((sum, entry) => sum + Number(entry.amount), 0) ?? 0;
   const calculatedBalance =
     netSavings !== undefined && adjustment !== undefined
@@ -649,7 +677,7 @@ function MonthClosureWizard({
         {step === 'nuBalance' && (
           <div className="flex flex-col gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-sm text-ink-soft">Saldo actual en Nu</span>
+              <span className="text-sm text-ink-soft">Saldo actual en Nu (el general, no la cajita de Ahorros)</span>
               <CurrencyInput value={nuBalance} onChange={setNuBalance} autoFocus />
             </label>
             <div className="flex justify-end gap-2">
@@ -733,34 +761,59 @@ function MonthClosureWizard({
         )}
 
         {step === 'breakdown' &&
-          (preview ? (
+          (adjustment !== undefined &&
+          checkpointAfterAdjustment !== undefined &&
+          nextMonthSavingsToMove !== undefined &&
+          checkpointAfterNextMonthSavings !== undefined ? (
             <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">Ahorros de {monthLabel}</span>
-                  <span className="font-medium text-ink">{formatCOP(preview.monthlySavingsBudget)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">Ajuste de Gastos del Mes</span>
-                  <span className={`font-medium ${Number(preview.adjustment) < 0 ? 'text-danger' : 'text-success'}`}>
-                    {formatCOP(preview.adjustment)}
-                  </span>
-                </div>
+              <p className="text-sm font-semibold text-ink">Sigue estos movimientos en Nu:</p>
+
+              <div className="rounded-lg border border-line p-3 text-sm">
+                <p className="text-ink">
+                  <b>1.</b>{' '}
+                  {adjustment < 0 ? (
+                    <>
+                      Retira <b>{formatCOP(String(Math.abs(adjustment)))}</b> de tu cajita de Ahorros Conjuntos
+                    </>
+                  ) : adjustment > 0 ? (
+                    <>
+                      Ingresa <b>{formatCOP(String(adjustment))}</b> a tu cajita de Ahorros Conjuntos
+                    </>
+                  ) : (
+                    'No hay ajuste de Gastos del Mes este cierre'
+                  )}{' '}
+                  (ajuste de Gastos del Mes de {monthLabel}).
+                </p>
+                <p className="mt-1 text-xs text-ink-muted">
+                  Tras este movimiento, tu saldo en Nu debe ser <b>{formatCOP(String(checkpointAfterAdjustment))}</b>.
+                </p>
               </div>
-              <p className="text-xs text-ink-faint">
-                Estas dos líneas quedarán en el ledger de Ahorros Familiares para {monthLabel} al confirmar el cierre.
-              </p>
-              {hasBigExpense && (
-                <div className="rounded-lg bg-warning-light p-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-ink-soft">Gasto grande ({bigExpenseDescription})</span>
-                    <span className="font-bold text-danger">− {formatCOP(bigExpenseAmount)}</span>
-                  </div>
+
+              <div className="rounded-lg border border-line p-3 text-sm">
+                <p className="text-ink">
+                  <b>2.</b> Ingresa <b>{formatCOP(String(nextMonthSavingsToMove))}</b> a tu cajita de Ahorros
+                  Conjuntos y guárdalo como "Ahorros de {nextMonthLabel}".
+                </p>
+                {hasBigExpense && (
                   <p className="mt-1 text-xs text-ink-muted">
-                    Se registra como una entrada aparte contra los ahorros del mes siguiente, no contra {monthLabel}.
+                    Ya se descontó el gasto grande de este cierre ({bigExpenseDescription}).
                   </p>
-                </div>
-              )}
+                )}
+                <p className="mt-1 text-xs text-ink-muted">
+                  Tras este movimiento, tu saldo en Nu debe ser{' '}
+                  <b>{formatCOP(String(checkpointAfterNextMonthSavings))}</b>.
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-cream p-3 text-sm">
+                <p className="text-ink">
+                  <b>3.</b> El excedente (<b>{formatCOP(String(checkpointAfterNextMonthSavings))}</b>) va a tu cajita
+                  de ahorro personal.
+                </p>
+              </div>
+
+              <p className="text-xs text-ink-faint">Cuando hayas hecho estos movimientos, continúa.</p>
+
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
                   Cancelar
