@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createBucket,
   createRule,
   deleteRule,
+  fetchAppSettings,
   fetchBuckets,
   fetchCategories,
   fetchRules,
+  updateAppSettings,
   updateBucket,
   updateRule,
   type Bucket,
@@ -16,6 +18,7 @@ import {
   type RuleSetType,
   type SplitMode,
 } from './lib/api';
+import { CurrencyInput } from './CurrencyInput';
 import NavBar from './NavBar';
 
 const TYPE_LABEL: Record<RuleSetType, string> = { personal: 'Personal', joint: 'Conjunto', movement: 'Movimiento' };
@@ -85,6 +88,8 @@ export default function ConfigurationScreen() {
             un mes en particular (ej. Julio) usa &quot;Configurar mes&quot; desde el Dashboard.
           </p>
         </div>
+
+        <GeneralSettingsSection />
 
         <BucketsSection />
 
@@ -202,6 +207,50 @@ export default function ConfigurationScreen() {
         </section>
       </div>
     </div>
+  );
+}
+
+function GeneralSettingsSection() {
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchAppSettings });
+
+  const [yieldThreshold, setYieldThreshold] = useState('');
+
+  useEffect(() => {
+    if (settings) setYieldThreshold(settings.yieldAutoThreshold);
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateAppSettings({ yieldAutoThreshold: yieldThreshold }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+
+  return (
+    <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
+      <h2 className="font-bold text-ink">Configuración general</h2>
+      <label className="mt-3 flex flex-col gap-1 sm:max-w-xs">
+        <span className="text-sm text-ink-soft">
+          Umbral para sugerir &quot;Rendimientos&quot; en el cierre de mes
+        </span>
+        <span className="text-xs text-ink-muted">
+          Si la diferencia del saldo real de Nu contra lo calculado es menor o igual a este valor, el
+          wizard de cierre ofrece registrarla como rendimientos para cuadrar el ledger.
+        </span>
+        <div className="mt-1 flex items-center gap-2">
+          <CurrencyInput value={yieldThreshold} onChange={setYieldThreshold} />
+          <button
+            type="button"
+            disabled={!yieldThreshold || yieldThreshold === settings?.yieldAutoThreshold || saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Guardar
+          </button>
+        </div>
+      </label>
+    </section>
   );
 }
 

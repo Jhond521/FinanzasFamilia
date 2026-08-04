@@ -25,6 +25,8 @@ model User {
   importBatchesUploaded ImportBatch[] @relation("ImportBatchUploader")
   creditCards           CreditCard[]  @relation("CreditCardOwner")
   openingReconciliations OpeningReconciliation[]
+  monthClosures         MonthClosure[]
+  familySavingsEntries  FamilySavingsEntry[]
 
   @@map("users")
 }
@@ -141,6 +143,8 @@ model Month {
   cardMonths    CardMonth[]
   summary       MonthSummary?
   openingReconciliations OpeningReconciliation[]
+  monthClosures MonthClosure[]
+  familySavingsEntries FamilySavingsEntry[]
 
   @@unique([year, month])
   @@map("months")
@@ -417,4 +421,67 @@ model OpeningReconciliation {
 
   @@index([monthId, userId, createdAt])
   @@map("opening_reconciliations")
+}
+
+enum MonthClosureActionType {
+  closed
+  reopened
+}
+
+// ---- Cierre de mes individual por persona (ticket #34) ----
+// Historial de eventos de cierre/reapertura por persona y mes -- nunca se borra (igual que
+// opening_reconciliations); el estado actual de una persona es el ultimo evento. El mes se
+// congela de verdad (Month.status='closed', month_summaries) solo cuando ambas personas estan
+// en estado 'closed' -- ver computeBothClosed en months.ts.
+model MonthClosure {
+  id        String                  @id @default(uuid())
+  monthId   String                  @map("month_id")
+  userId    String                  @map("user_id")
+  action    MonthClosureActionType
+  createdAt DateTime                @default(now()) @map("created_at")
+
+  month Month @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([monthId, userId, createdAt])
+  @@map("month_closures")
+}
+
+enum FamilySavingsEntryType {
+  initial
+  monthly_savings
+  adjustment
+  yield
+  manual
+}
+
+// ---- Ahorros Familiares (ticket #36) ----
+// Ledger de ahorros conjuntos en Nu por persona -- nunca se borra. El saldo de una persona es la
+// suma de sus entradas; Ahorros Familiares es la suma de ambas. monthId es null para el saldo
+// inicial y las entradas manuales libres (no atadas a un cierre de mes en particular).
+model FamilySavingsEntry {
+  id          String                  @id @default(uuid())
+  userId      String                  @map("user_id")
+  monthId     String?                 @map("month_id")
+  type        FamilySavingsEntryType
+  amount      Decimal                 @db.Decimal(14, 2)
+  description String
+  createdAt   DateTime                @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id])
+  month Month? @relation(fields: [monthId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("family_savings_entries")
+}
+
+// ---- Configuracion general de la app (ticket #36) ----
+// Fila unica (singleton, get-or-create igual que card_months) para valores configurables que no
+// pertenecen a ningun mes/usuario/rubro en particular -- hoy solo el umbral de "Rendimientos".
+model AppSettings {
+  id                 String   @id @default(uuid())
+  yieldAutoThreshold Decimal  @default(200000) @map("yield_auto_threshold") @db.Decimal(14, 2)
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
 }

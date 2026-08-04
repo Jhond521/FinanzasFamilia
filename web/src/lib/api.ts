@@ -170,12 +170,109 @@ export async function fetchMonthSummary(monthId: string): Promise<MonthSummaryDe
   return apiFetch<MonthSummaryDetail>(`/months/${monthId}/summary`);
 }
 
-export async function closeMonth(monthId: string): Promise<{ month: MonthDetail['month']; summary: MonthSummaryDetail }> {
-  return apiFetch(`/months/${monthId}/close`, { method: 'POST' });
+// ---- Cierre de mes individual por persona (ticket #34) ----
+
+export type MonthClosure = {
+  id: string;
+  monthId: string;
+  userId: string;
+  action: 'closed' | 'reopened';
+  createdAt: string;
+};
+
+export async function fetchLatestClosure(monthId: string, userId: string): Promise<MonthClosure | null> {
+  const body = await apiFetch<{ closure: MonthClosure | null }>(
+    `/months/${monthId}/closures/latest?userId=${userId}`,
+  );
+  return body.closure;
 }
 
-export async function reopenMonth(monthId: string): Promise<{ month: MonthDetail['month'] }> {
-  return apiFetch(`/months/${monthId}/reopen`, { method: 'POST' });
+export async function closeMine(
+  monthId: string,
+  userId: string,
+  extra?: { bigExpenseAmount?: string; bigExpenseDescription?: string; yieldAmount?: string },
+): Promise<{ closure: MonthClosure; month: MonthDetail['month']; summary?: MonthSummaryDetail }> {
+  return apiFetch(`/months/${monthId}/close-mine`, {
+    method: 'POST',
+    body: JSON.stringify({ userId, ...extra }),
+  });
+}
+
+export async function reopenMine(
+  monthId: string,
+  userId: string,
+): Promise<{ closure: MonthClosure; month: MonthDetail['month'] }> {
+  return apiFetch(`/months/${monthId}/reopen-mine`, { method: 'POST', body: JSON.stringify({ userId }) });
+}
+
+// ---- Proceso de cierre refinado (ticket #36) ----
+
+export type CloseCheck = {
+  unclassifiedCount: number;
+  nextMonthExists: boolean;
+  nextMonthOpeningDone: boolean;
+};
+
+export async function fetchCloseCheck(monthId: string, userId: string): Promise<CloseCheck> {
+  return apiFetch(`/months/${monthId}/close-check?userId=${userId}`);
+}
+
+export type ClosePreview = {
+  monthlySavingsBudget: string;
+  adjustment: string;
+};
+
+export async function fetchClosePreview(monthId: string, userId: string): Promise<ClosePreview> {
+  return apiFetch(`/months/${monthId}/close-preview?userId=${userId}`);
+}
+
+// ---- Ahorros Familiares (ticket #36) ----
+
+export type FamilySavingsEntryType = 'initial' | 'monthly_savings' | 'adjustment' | 'yield' | 'manual';
+
+export type FamilySavingsEntry = {
+  id: string;
+  userId: string;
+  monthId: string | null;
+  type: FamilySavingsEntryType;
+  amount: string;
+  description: string;
+  createdAt: string;
+};
+
+export type FamilySavingsSummary = {
+  balances: { userId: string; name: string; balance: string }[];
+  total: string;
+};
+
+export async function fetchFamilySavingsSummary(): Promise<FamilySavingsSummary> {
+  return apiFetch('/family-savings/summary');
+}
+
+export async function fetchFamilySavingsEntries(params?: {
+  userId?: string;
+  monthId?: string;
+}): Promise<FamilySavingsEntry[]> {
+  const query = new URLSearchParams();
+  if (params?.userId) query.set('userId', params.userId);
+  if (params?.monthId) query.set('monthId', params.monthId);
+  const qs = query.toString();
+  const body = await apiFetch<{ entries: FamilySavingsEntry[] }>(`/family-savings/entries${qs ? `?${qs}` : ''}`);
+  return body.entries;
+}
+
+export async function createFamilySavingsEntry(input: {
+  userId: string;
+  type?: FamilySavingsEntryType;
+  amount: string;
+  description: string;
+  monthId?: string;
+}): Promise<FamilySavingsEntry> {
+  const body = await apiFetch<{ entry: FamilySavingsEntry }>('/family-savings/entries', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return body.entry;
 }
 
 export type MonthComparisonRow = {
@@ -542,6 +639,18 @@ export async function bulkConfirmSkippedDuplicates(batchId: string): Promise<num
     body: JSON.stringify({ batchId }),
   });
   return body.confirmed;
+}
+
+// ---- Configuracion general (ticket #36) ----
+
+export type AppSettings = { yieldAutoThreshold: string };
+
+export async function fetchAppSettings(): Promise<AppSettings> {
+  return apiFetch('/settings');
+}
+
+export async function updateAppSettings(input: { yieldAutoThreshold: string }): Promise<AppSettings> {
+  return apiFetch('/settings', { method: 'PUT', body: JSON.stringify(input) });
 }
 
 // ---- Fase 4: tarjetas Nu Bank ----
