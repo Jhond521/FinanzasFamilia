@@ -19,11 +19,13 @@ describe('personSharedExpensesDelta', () => {
     expect(personSharedExpensesDelta('9208727.52', '9208727.52').toString()).toBe('0');
   });
 
-  it('regresion Julio 2026 (ticket #47): cada persona responde por su propia bolsa, sin repartir por ingreso', () => {
+  it('regresion Julio 2026 (tickets #47 + ##53): cada persona responde por su propia bolsa, con el presupuesto ya corregido', () => {
+    // Presupuesto de Gastos del Mes ya reconciliado con el resto de bolsas (ticket ##53) -- antes
+    // el presupuesto de John era 5,490,768.00 (formula vieja); ahora es 5,659,606.90.
     // John se paso de su presupuesto -> retiro de sus ahorros.
-    expect(personSharedExpensesDelta('5490768.00', '8162194.78').toString()).toBe('-2671426.78');
+    expect(personSharedExpensesDelta('5659606.90', '8162194.78').toString()).toBe('-2502587.88');
     // Lina gasto menos de su presupuesto -> bono a sus ahorros.
-    expect(personSharedExpensesDelta('3717959.52', '3113500.69').toString()).toBe('604458.83');
+    expect(personSharedExpensesDelta('3549120.62', '3113500.69').toString()).toBe('435619.93');
   });
 });
 

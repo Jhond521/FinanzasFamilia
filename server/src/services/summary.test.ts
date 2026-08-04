@@ -40,21 +40,25 @@ describe('leaveInAccount', () => {
   });
 });
 
-describe('ahorro real — regresion Julio 2026 (ticket #47)', () => {
-  // Caso real de produccion: con el reparto proporcional viejo, el subgasto de Lina (604,458.83)
-  // terminaba subsidiando el sobregasto de John -- 1,438,982.73 mal asignados en cada direccion.
-  // El fix calcula el delta de cada persona contra SU propio presupuesto de Gastos del Mes.
-  it('cada persona usa su propio delta, no el excedente del hogar repartido por ingreso', () => {
-    const johnReal = realSavingsContribution('4118076', '5490768.00', '8162194.78');
-    const linaReal = realSavingsContribution('2788469.64', '3717959.52', '3113500.69');
+describe('ahorro real — regresion Julio 2026 (tickets #47 + ##53)', () => {
+  // Caso real de produccion, con los dos fixes aplicados:
+  // - #47: cada persona usa su propio delta de Gastos del Mes, no el excedente del hogar
+  //   repartido por ingreso.
+  // - ##53: el presupuesto de cada bolsa por persona (Ahorros Conjuntos, Gastos del Mes) ya
+  //   reconcilia las bolsas 'proportional' con las 'half' -- antes, la suma de aportes de una
+  //   persona no daba su ingreso exacto (ver distribution.test.ts).
+  // El 1,742,117.30 de John coincide exacto con la celda K11 del Excel de referencia.
+  it('cada persona usa su propio presupuesto (ya corregido) y su propio delta', () => {
+    const johnReal = realSavingsContribution('4244705.18', '5659606.90', '8162194.78');
+    const linaReal = realSavingsContribution('2661840.46', '3549120.62', '3113500.69');
 
-    expect(johnReal.toString()).toBe('1446649.22');
-    expect(linaReal.toString()).toBe('3392928.47');
+    expect(johnReal.toString()).toBe('1742117.3');
+    expect(linaReal.toString()).toBe('3097460.39');
   });
 
-  it('la suma del ahorro real de ambos no cambia frente al calculo household (el fix redistribuye, no crea ni destruye plata)', () => {
-    const johnReal = realSavingsContribution('4118076', '5490768.00', '8162194.78');
-    const linaReal = realSavingsContribution('2788469.64', '3717959.52', '3113500.69');
+  it('la suma del ahorro real de ambos no cambia frente al calculo household (los fixes redistribuyen, no crean ni destruyen plata)', () => {
+    const johnReal = realSavingsContribution('4244705.18', '5659606.90', '8162194.78');
+    const linaReal = realSavingsContribution('2661840.46', '3549120.62', '3113500.69');
 
     expect(johnReal.plus(linaReal).toString()).toBe('4839577.69');
   });

@@ -18,8 +18,8 @@ describe('buildMonthExportWorkbook', () => {
         spent: '0',
         available: '6906545.64',
         contributions: [
-          { userName: 'John', amount: '4118076' },
-          { userName: 'Lina', amount: '2788469.64' },
+          { userName: 'John', amount: '4244705.18' },
+          { userName: 'Lina', amount: '2661840.46' },
         ],
       },
       {
@@ -29,18 +29,19 @@ describe('buildMonthExportWorkbook', () => {
         spent: '11275695.47',
         available: '-2066967.95',
         contributions: [
-          { userName: 'John', amount: '5490768' },
-          { userName: 'Lina', amount: '3717959.52' },
+          { userName: 'John', amount: '5659606.90' },
+          { userName: 'Lina', amount: '3549120.62' },
         ],
       },
     ],
-    // Regresion Julio 2026 (ticket #47): John gasto 8,162,194.78 de su presupuesto de 5,490,768
-    // (se paso), Lina gasto 3,113,500.69 de 3,717,959.52 (le sobro) -- cada quien responde por su
-    // propia bolsa, ya no se reparte el excedente del hogar proporcional al ingreso.
+    // Regresion Julio 2026 (tickets #47 + ##53): John gasto 8,162,194.78 de su presupuesto de
+    // 5,659,606.90 (se paso), Lina gasto 3,113,500.69 de 3,549,120.62 (le sobro) -- cada quien
+    // responde por su propia bolsa (#47), con el presupuesto por persona ya reconciliado entre
+    // bolsas 'proportional' y 'half' (##53).
     sharedExpensesExcess: '2066967.95',
     perPersonClose: [
-      { userName: 'John', realSavings: '1446649.22', leaveInAccount: '7025555.92' },
-      { userName: 'Lina', realSavings: '3392928.47', leaveInAccount: '5252747.44' },
+      { userName: 'John', realSavings: '1742117.30', leaveInAccount: '7194394.82' },
+      { userName: 'Lina', realSavings: '3097460.39', leaveInAccount: '5083908.54' },
     ],
     transactions: [
       {
@@ -75,8 +76,8 @@ describe('buildMonthExportWorkbook', () => {
     const ahorrosRow = rows.find((r) => r[0] === 'Ahorros Conjuntos') as unknown[];
     expect(typeof ahorrosRow[2]).toBe('number');
     expect(ahorrosRow[2]).toBe(6906545.64);
-    expect(ahorrosRow[5]).toBe(4118076);
-    expect(ahorrosRow[6]).toBe(2788469.64);
+    expect(ahorrosRow[5]).toBe(4244705.18);
+    expect(ahorrosRow[6]).toBe(2661840.46);
   });
 
   it('preserva el disponible negativo cuando la bolsa se paso del presupuesto', () => {
@@ -89,8 +90,8 @@ describe('buildMonthExportWorkbook', () => {
   it('incluye el bloque de cierre con ahorro real y dejar en cuenta por persona', () => {
     const workbook = buildMonthExportWorkbook(input);
     const rows = sheetRows(workbook, 'Resumen');
-    const johnRow = rows.find((r) => r[0] === 'John' && typeof r[1] === 'number' && r[1] === 1446649.22) as unknown[];
-    expect(johnRow[2]).toBe(7025555.92);
+    const johnRow = rows.find((r) => r[0] === 'John' && typeof r[1] === 'number' && r[1] === 1742117.3) as unknown[];
+    expect(johnRow[2]).toBe(7194394.82);
   });
 
   it('la hoja de transacciones preserva el signo (gasto negativo, abono positivo) sin re-derivar', () => {

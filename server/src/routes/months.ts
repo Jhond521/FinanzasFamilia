@@ -4,7 +4,7 @@ import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
-import { bucketBudget, personContribution, totalIncome } from '../services/distribution';
+import { bucketBudget, distributionContext, personContribution, totalIncome } from '../services/distribution';
 import { jointSpent, jointSpentByUser, personalSpent } from '../services/spending';
 import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '../services/summary';
 import {
@@ -153,6 +153,11 @@ async function buildLiveSummary(month: Month) {
   let sharedBudgetTotal = new Decimal(0);
   let sharedSpentTotal = new Decimal(0);
 
+  // ticket ##53: contexto de reparto construido una vez -- personContribution ya no puede decidir
+  // mirando una sola bolsa, necesita el conjunto completo (Σ pct 'half' vs 'proportional') para
+  // reconciliar que la suma de aportes de una persona de exacto su ingreso.
+  const ctx = distributionContext(monthBuckets, total, incomes.length);
+
   const buckets = monthBuckets.map((bucket) => {
     const budget = bucketBudget(bucket, total);
     const contributions = incomes.map((income) => {
@@ -162,7 +167,7 @@ async function buildLiveSummary(month: Month) {
           : bucket.kind === 'shared_expenses'
             ? jointSpentByUser(spendingEntries, income.userId)
             : null;
-      const amount = personContribution(bucket, budget, income.amount, total);
+      const amount = personContribution(bucket, income.amount, ctx);
 
       const byUser =
         bucket.kind === 'savings' ? savingsByUser : bucket.kind === 'shared_expenses' ? sharedByUser : bucket.kind === 'personal' ? personalByUser : null;

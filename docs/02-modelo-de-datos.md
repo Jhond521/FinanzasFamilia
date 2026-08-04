@@ -84,7 +84,12 @@ month_summaries              -- congelado al cerrar el mes (JSON con todas las c
 Sea `I_j`, `I_l` los ingresos totales del mes de John y Lina, `T = I_j + I_l`.
 
 - Bolsa de un rubro `b`: `P_b = T * pct_b`.
-- Aporte por persona: si `split_mode='proportional'` → `P_b * I_p / T`; si `'half'` → `P_b / 2`.
+- Aporte por persona (ticket ##53 — antes de este fix, mezclar `proportional` sobre ingreso bruto
+  con `half` mitad y mitad rompía el invariante de abajo): primero se descuenta a cada persona su
+  parte de las bolsas `half` (`P_b / n`, sin importar el ingreso). El ingreso remanente
+  `R_p = I_p − Σ_{b∈half} (P_b / n)` se reparte entre las bolsas `proportional` según el peso
+  relativo de sus porcentajes: `aporte_p(b) = R_p * pct_b / Σ_{b'∈proportional} pct_b'`. Esto
+  garantiza que la suma de los aportes de una persona a todas las bolsas da exacto su ingreso.
 - Gastado conjunto = `Σ |amount| de transactions(type='joint')`.
 - Gastado personal de p = `Σ |amount| de transactions(type='personal', owner=p)`. Nota: los abonos/ingresos positivos tipo `personal` (intereses, reembolsos) restan del gastado.
 - Las tarjetas (card_items / card_months) NO entran en estos cálculos: son un control independiente; el pago sale de la cuenta de ahorros.
