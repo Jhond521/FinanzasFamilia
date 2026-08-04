@@ -396,7 +396,7 @@ function ReviewCard({
         value={detail}
         onChange={(e) => setDetail(e.target.value)}
         placeholder="Detalle (opcional)…"
-        className="mb-4 w-full rounded-lg border border-line px-3 py-2 text-sm"
+        className="mb-4 w-full rounded-lg border border-line px-3 py-2 text-sm text-ink"
       />
 
       <div className="grid grid-cols-3 gap-2">

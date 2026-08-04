@@ -529,12 +529,22 @@ function MonthClosureWizard({
     setStep(check.unclassifiedCount > 0 || !check.nextMonthOpeningDone ? 'blocked' : 'nuBalance');
   }, [check, step]);
 
-  const { data: movementCandidates } = useQuery({
+  const nextMonthId = check?.nextMonthId ?? undefined;
+
+  // Candidatos para "gasto grande" (paso #39): del mes que se cierra y tambien del mes
+  // siguiente, ya que el gasto realmente afecta los ahorros de ESE mes (ticket #40).
+  const { data: movementCandidatesClosingMonth } = useQuery({
     queryKey: ['transactions', monthId, { ownerUserId: currentUser.id, type: 'movement' }],
     queryFn: () => fetchTransactions({ monthId, ownerUserId: currentUser.id, type: 'movement' }),
     enabled: step === 'bigExpense',
   });
-  const nonPayrollMovements = (movementCandidates ?? []).filter((tx) => !/NOMI|INTERBANC/i.test(tx.bankDescription));
+  const { data: movementCandidatesNextMonth } = useQuery({
+    queryKey: ['transactions', nextMonthId, { ownerUserId: currentUser.id, type: 'movement' }],
+    queryFn: () => fetchTransactions({ monthId: nextMonthId!, ownerUserId: currentUser.id, type: 'movement' }),
+    enabled: step === 'bigExpense' && Boolean(nextMonthId),
+  });
+  const movementCandidates = [...(movementCandidatesClosingMonth ?? []), ...(movementCandidatesNextMonth ?? [])];
+  const nonPayrollMovements = movementCandidates.filter((tx) => !/NOMI|INTERBANC/i.test(tx.bankDescription));
 
   const { data: preview } = useQuery({
     queryKey: ['months', monthId, 'close-preview', currentUser.id],
@@ -556,11 +566,16 @@ function MonthClosureWizard({
   const yieldThreshold = appSettings ? Number(appSettings.yieldAutoThreshold) : YIELD_AUTO_THRESHOLD_FALLBACK;
 
   const bigExpenseValue = hasBigExpense ? Number(bigExpenseAmount || '0') : 0;
-  const netSavings = preview ? Number(preview.monthlySavingsBudget) - bigExpenseValue : undefined;
+  // El gasto grande ya no se resta de "Ahorros de [mes en cierre]" -- afecta al mes siguiente
+  // (ticket #40). Igual se descuenta aqui porque la plata sale de la misma cajita de Nu, sin
+  // importar a que mes quede atribuida en el ledger.
+  const netSavings = preview ? Number(preview.monthlySavingsBudget) : undefined;
   const adjustment = preview ? Number(preview.adjustment) : undefined;
   const balanceSoFar = pastEntries?.reduce((sum, entry) => sum + Number(entry.amount), 0) ?? 0;
   const calculatedBalance =
-    netSavings !== undefined && adjustment !== undefined ? balanceSoFar + netSavings + adjustment : undefined;
+    netSavings !== undefined && adjustment !== undefined
+      ? balanceSoFar + netSavings + adjustment - bigExpenseValue
+      : undefined;
   const diff = calculatedBalance !== undefined && finalBalance ? Number(finalBalance) - calculatedBalance : undefined;
   const suggestsYield = diff !== undefined && diff > 0 && diff <= yieldThreshold;
 
@@ -699,7 +714,7 @@ function MonthClosureWizard({
                     value={bigExpenseDescription}
                     onChange={(e) => setBigExpenseDescription(e.target.value)}
                     placeholder="Ej. Compra de tiquetes aéreos"
-                    className="rounded-lg border border-line px-3 py-2 text-sm"
+                    className="rounded-lg border border-line px-3 py-2 text-sm text-ink"
                   />
                 </label>
                 <div className="flex justify-end">
@@ -722,15 +737,9 @@ function MonthClosureWizard({
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-ink-muted">Ahorros de {monthLabel} (presupuestado)</span>
+                  <span className="text-ink-muted">Ahorros de {monthLabel}</span>
                   <span className="font-medium text-ink">{formatCOP(preview.monthlySavingsBudget)}</span>
                 </div>
-                {hasBigExpense && (
-                  <div className="flex justify-between">
-                    <span className="text-ink-muted">Menos gasto grande ({bigExpenseDescription})</span>
-                    <span className="font-medium text-danger">− {formatCOP(bigExpenseAmount)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span className="text-ink-muted">Ajuste de Gastos del Mes</span>
                   <span className={`font-medium ${Number(preview.adjustment) < 0 ? 'text-danger' : 'text-success'}`}>
@@ -738,15 +747,20 @@ function MonthClosureWizard({
                   </span>
                 </div>
               </div>
-              <div className="rounded-lg bg-ink p-3 text-white">
-                <div className="flex justify-between text-sm">
-                  <span className="text-white/70">Ahorros de {monthLabel} (neto)</span>
-                  <span className="font-bold">{formatCOP(String(netSavings ?? 0))}</span>
-                </div>
-              </div>
               <p className="text-xs text-ink-faint">
-                Estas dos líneas quedarán en el ledger de Ahorros Familiares al confirmar el cierre.
+                Estas dos líneas quedarán en el ledger de Ahorros Familiares para {monthLabel} al confirmar el cierre.
               </p>
+              {hasBigExpense && (
+                <div className="rounded-lg bg-warning-light p-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-ink-soft">Gasto grande ({bigExpenseDescription})</span>
+                    <span className="font-bold text-danger">− {formatCOP(bigExpenseAmount)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Se registra como una entrada aparte contra los ahorros del mes siguiente, no contra {monthLabel}.
+                  </p>
+                </div>
+              )}
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
                   Cancelar
@@ -897,7 +911,7 @@ function MonthBucketsPanel({
                     value={bucket.percentage}
                     onChange={(e) => updateRow(bucket.id, { percentage: e.target.value })}
                     disabled={isClosed}
-                    className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm disabled:opacity-50"
+                    className="w-16 rounded-lg border border-line px-2 py-1 text-right text-sm text-ink disabled:opacity-50"
                   />
                   <span className="text-xs text-ink-muted">%</span>
                 </div>

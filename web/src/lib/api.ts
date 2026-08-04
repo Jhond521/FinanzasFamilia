@@ -210,6 +210,7 @@ export async function reopenMine(
 export type CloseCheck = {
   unclassifiedCount: number;
   nextMonthExists: boolean;
+  nextMonthId: string | null;
   nextMonthOpeningDone: boolean;
 };
 

@@ -150,7 +150,7 @@ export default function FamilySavingsScreen() {
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 placeholder="Ej. Saldo inicial en Nu, retiro para vacaciones…"
-                className="rounded-lg border border-line px-3 py-2 text-sm"
+                className="rounded-lg border border-line px-3 py-2 text-sm text-ink"
               />
             </label>
             {createMutation.isError && (

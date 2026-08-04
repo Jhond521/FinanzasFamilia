@@ -1,3 +1,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* La app no tiene diseno para modo oscuro (design_specs/ es todo claro) -- sin esto, Chrome en
+   SO/navegador oscuro aplica su hoja de estilos nativa oscura a inputs/textarea/select (texto
+   blanco sobre el fondo blanco del input, invisible salvo al seleccionarlo). Ticket #38. */
+:root {
+  color-scheme: light;
+}

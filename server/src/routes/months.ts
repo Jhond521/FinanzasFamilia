@@ -13,7 +13,7 @@ import {
   leaveInAccountAtOpening,
   moveToSavingsFromBalance,
 } from '../services/openingReconciliation';
-import { netMonthlySavings, personAdjustmentShare, sharedExpensesDelta } from '../services/familySavings';
+import { personAdjustmentShare, sharedExpensesDelta } from '../services/familySavings';
 import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
@@ -468,13 +468,25 @@ async function personSharedExpensesAdjustment(month: Month, userId: string): Pro
   return personAdjustmentShare(delta, personIncome, total);
 }
 
+/** Mes calendario siguiente a uno dado, si ya existe en el sistema (o null). */
+async function findNextMonth(month: Month): Promise<Month | null> {
+  const next = month.month === 12 ? { year: month.year + 1, month: 1 } : { year: month.year, month: month.month + 1 };
+  return prisma.month.findUnique({ where: { year_month: next } });
+}
+
 /**
  * Escribe en el ledger de Ahorros Familiares las entradas del cierre de esta persona para este
- * mes: "Ahorros de [Mes]" (neteada por el gasto grande si lo hubo) y "Ajuste de ahorros de mes
- * en cierre". Si ya existian entradas de un cierre anterior de este mismo (mes, persona) --
- * porque se reabrio y se esta volviendo a cerrar -- se reemplazan por las nuevas en vez de
- * duplicar (a diferencia de MonthClosure/OpeningReconciliation, que si acumulan historial: estas
- * 3 entradas estan derivadas del estado actual del mes, no son eventos independientes).
+ * mes: "Ahorros de [Mes]" (el aporte presupuestado integro, SIN restar el gasto grande -- ese
+ * afecta al mes siguiente, no al que se cierra, ver ticket #40) y "Ajuste de ahorros de mes en
+ * cierre". Si ya existian entradas de un cierre anterior de este mismo (mes, persona) -- porque
+ * se reabrio y se esta volviendo a cerrar -- se reemplazan por las nuevas en vez de duplicar (a
+ * diferencia de MonthClosure/OpeningReconciliation, que si acumulan historial: estas 3 entradas
+ * estan derivadas del estado actual del mes, no son eventos independientes).
+ *
+ * El gasto grande de ahorros (si lo hubo) se registra como una entrada `manual` aparte, atada al
+ * MES SIGUIENTE (de donde realmente sale la plata, ya que ese mes ya recibio su Cuadre de Inicio
+ * -- ver #36 paso 3) -- se usa `manual` a proposito, no `monthly_savings`, para que no quede
+ * sujeta al deleteMany de arriba cuando ese mes siguiente se cierre formalmente mas adelante.
  */
 async function writeClosingLedgerEntries(
   month: Month,
@@ -487,7 +499,6 @@ async function writeClosingLedgerEntries(
     monthlySavingsBudget(month, userId),
     personSharedExpensesAdjustment(month, userId),
   ]);
-  const netSavings = netMonthlySavings(baseSavings, bigExpenseAmount ?? 0);
   const monthLabel = `${MESES[month.month - 1]} ${month.year}`;
 
   await prisma.familySavingsEntry.deleteMany({
@@ -500,11 +511,8 @@ async function writeClosingLedgerEntries(
         userId,
         monthId: month.id,
         type: 'monthly_savings',
-        amount: netSavings,
-        description:
-          bigExpenseAmount && new Decimal(bigExpenseAmount).isPositive()
-            ? `Ahorros de ${monthLabel} reducidos por ${bigExpenseDescription || 'gasto grande de ahorros'}`
-            : `Ahorros de ${monthLabel}`,
+        amount: baseSavings,
+        description: `Ahorros de ${monthLabel}`,
       },
       {
         userId,
@@ -526,6 +534,27 @@ async function writeClosingLedgerEntries(
         : []),
     ],
   });
+
+  if (bigExpenseAmount && new Decimal(bigExpenseAmount).isPositive()) {
+    const nextMonth = await findNextMonth(month);
+    if (nextMonth) {
+      const tag = `Gasto grande de ahorros (cierre de ${monthLabel}):`;
+      // Idempotente: si se reabre y se vuelve a cerrar este mismo mes con otro gasto grande,
+      // reemplaza la entrada anterior de ESTE cierre en vez de duplicarla.
+      await prisma.familySavingsEntry.deleteMany({
+        where: { monthId: nextMonth.id, userId, type: 'manual', description: { startsWith: tag } },
+      });
+      await prisma.familySavingsEntry.create({
+        data: {
+          userId,
+          monthId: nextMonth.id,
+          type: 'manual',
+          amount: new Decimal(bigExpenseAmount).negated(),
+          description: `${tag} ${bigExpenseDescription || 'gasto grande de ahorros'}`,
+        },
+      });
+    }
+  }
 }
 
 /** Chequeo previo al wizard de cierre (pasos 2 y 3): transacciones sin clasificar de quien
@@ -539,8 +568,7 @@ monthsRouter.get('/:id/close-check', async (req, res) => {
     where: { monthId: month.id, ownerUserId: userId, type: 'unclassified' },
   });
 
-  const next = month.month === 12 ? { year: month.year + 1, month: 1 } : { year: month.year, month: month.month + 1 };
-  const nextMonth = await prisma.month.findUnique({ where: { year_month: next } });
+  const nextMonth = await findNextMonth(month);
   const nextMonthOpeningDone = nextMonth
     ? Boolean(
         await prisma.openingReconciliation.findFirst({
@@ -550,7 +578,12 @@ monthsRouter.get('/:id/close-check', async (req, res) => {
       )
     : false;
 
-  res.json({ unclassifiedCount, nextMonthExists: Boolean(nextMonth), nextMonthOpeningDone });
+  res.json({
+    unclassifiedCount,
+    nextMonthExists: Boolean(nextMonth),
+    nextMonthId: nextMonth?.id ?? null,
+    nextMonthOpeningDone,
+  });
 });
 
 /** Cifras para los pasos 5 y 6 del wizard de cierre (informativo, no persiste nada). */
