@@ -2,40 +2,28 @@ import { describe, expect, it } from 'vitest';
 import {
   balanceFromEntries,
   netMonthlySavings,
-  personAdjustmentShare,
-  sharedExpensesDelta,
+  personSharedExpensesDelta,
   suggestsYieldAdjustment,
 } from './familySavings';
 
-describe('sharedExpensesDelta', () => {
-  it('positivo cuando se gasto menos del presupuesto (bono)', () => {
-    expect(sharedExpensesDelta('9208727.52', '9000000').toString()).toBe('208727.52');
+describe('personSharedExpensesDelta', () => {
+  it('positivo cuando la persona gasto menos de SU presupuesto (bono)', () => {
+    expect(personSharedExpensesDelta('9208727.52', '9000000').toString()).toBe('208727.52');
   });
 
-  it('negativo cuando se gasto mas del presupuesto (debito) -- a diferencia de sharedExpensesExcess, no se clampea', () => {
-    expect(sharedExpensesDelta('9208727.52', '9850299.52').toString()).toBe('-641572');
+  it('negativo cuando la persona gasto mas de SU presupuesto (retiro) -- no se clampea', () => {
+    expect(personSharedExpensesDelta('9208727.52', '9850299.52').toString()).toBe('-641572');
   });
 
   it('cero cuando calzo exacto', () => {
-    expect(sharedExpensesDelta('9208727.52', '9208727.52').toString()).toBe('0');
-  });
-});
-
-describe('personAdjustmentShare', () => {
-  it('reparte el delta proporcional al ingreso (numeros simples)', () => {
-    const total = 100;
-    // John gana 60/100, Lina 40/100 -> de un delta de 50, les toca 30 y 20 respectivamente.
-    expect(personAdjustmentShare(50, 60, total).toString()).toBe('30');
-    expect(personAdjustmentShare(50, 40, total).toString()).toBe('20');
+    expect(personSharedExpensesDelta('9208727.52', '9208727.52').toString()).toBe('0');
   });
 
-  it('funciona igual con delta negativo (debito repartido)', () => {
-    const total = 100;
-    expect(personAdjustmentShare(-50, 60, total).toString()).toBe('-30');
-  });
-
-  it('con total=0 la parte proporcional es 0 (evita dividir por cero)', () => {
-    expect(personAdjustmentShare(50, 0, 0).toString()).toBe('0');
+  it('regresion Julio 2026 (ticket #47): cada persona responde por su propia bolsa, sin repartir por ingreso', () => {
+    // John se paso de su presupuesto -> retiro de sus ahorros.
+    expect(personSharedExpensesDelta('5490768.00', '8162194.78').toString()).toBe('-2671426.78');
+    // Lina gasto menos de su presupuesto -> bono a sus ahorros.
+    expect(personSharedExpensesDelta('3717959.52', '3113500.69').toString()).toBe('604458.83');
   });
 });
 

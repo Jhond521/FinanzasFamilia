@@ -156,7 +156,7 @@ export async function replaceMonthBuckets(
 
 export type MonthCloseInfo = {
   sharedExpensesExcess: string;
-  perPerson: { userId: string; realSavings: string; leaveInAccount: string }[];
+  perPerson: { userId: string; realSavings: string; leaveInAccount: string; sharedExpensesDelta: string }[];
 };
 
 export type MonthSummaryDetail = {

@@ -13,7 +13,7 @@ import {
   leaveInAccountAtOpening,
   moveToSavingsFromBalance,
 } from '../services/openingReconciliation';
-import { personAdjustmentShare, sharedExpensesDelta } from '../services/familySavings';
+import { personSharedExpensesDelta } from '../services/familySavings';
 import { buildMonthExportWorkbook } from '../services/monthExport';
 
 export const monthsRouter = Router();
@@ -138,6 +138,7 @@ async function buildLiveSummary(month: Month) {
   // aparte de las bolsas del bloque `buckets` que ya se devolvia antes de este ticket.
   const savingsByUser = new Map<string, Decimal>();
   const sharedByUser = new Map<string, Decimal>();
+  const sharedSpentByUser = new Map<string, Decimal>();
   const personalByUser = new Map<string, Decimal>();
   let sharedBudgetTotal = new Decimal(0);
   let sharedSpentTotal = new Decimal(0);
@@ -157,6 +158,9 @@ async function buildLiveSummary(month: Month) {
         bucket.kind === 'savings' ? savingsByUser : bucket.kind === 'shared_expenses' ? sharedByUser : bucket.kind === 'personal' ? personalByUser : null;
       if (byUser) {
         byUser.set(income.userId, (byUser.get(income.userId) ?? new Decimal(0)).plus(amount));
+      }
+      if (bucket.kind === 'shared_expenses' && spent) {
+        sharedSpentByUser.set(income.userId, (sharedSpentByUser.get(income.userId) ?? new Decimal(0)).plus(spent));
       }
 
       return {
@@ -195,11 +199,13 @@ async function buildLiveSummary(month: Month) {
   const perPerson = incomes.map((income) => {
     const savingsContribution = savingsByUser.get(income.userId) ?? new Decimal(0);
     const sharedContribution = sharedByUser.get(income.userId) ?? new Decimal(0);
+    const sharedSpent = sharedSpentByUser.get(income.userId) ?? new Decimal(0);
     const personalContributionAmount = personalByUser.get(income.userId) ?? new Decimal(0);
     return {
       userId: income.userId,
-      realSavings: realSavingsContribution(savingsContribution, income.amount, total, excess).toString(),
+      realSavings: realSavingsContribution(savingsContribution, sharedContribution, sharedSpent).toString(),
       leaveInAccount: leaveInAccount(sharedContribution, personalContributionAmount).toString(),
+      sharedExpensesDelta: personSharedExpensesDelta(sharedContribution, sharedSpent).toString(),
     };
   });
 
@@ -456,21 +462,19 @@ async function monthlySavingsBudget(month: Month, userId: string): Promise<Decim
   );
 }
 
-/** Delta de Gastos del Mes (household) repartido a una persona (paso 6) -- usa el delta con
- * signo (no clampeado) de familySavings.ts, no sharedExpensesExcess de summary.ts (esa es para
- * el cierre normal de #34 y nunca premia el subgasto). */
+/** Delta individual de Gastos del Mes de una persona (paso 6) -- cada quien responde por su
+ * propia bolsa, no se reparte por ingreso (ticket #47). Usa el delta con signo (no clampeado)
+ * de familySavings.ts, no sharedExpensesExcess de summary.ts (esa es household y para el cierre
+ * normal de #34, que nunca premia el subgasto). */
 async function personSharedExpensesAdjustment(month: Month, userId: string): Promise<Decimal> {
-  const [summary, incomes] = await Promise.all([
-    buildLiveSummary(month),
-    prisma.income.findMany({ where: { monthId: month.id } }),
-  ]);
+  const summary = await buildLiveSummary(month);
   const sharedBucket = summary.buckets.find((bucket) => bucket.kind === 'shared_expenses');
   if (!sharedBucket) return new Decimal(0);
 
-  const delta = sharedExpensesDelta(sharedBucket.budget, sharedBucket.spent);
-  const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
-  const personIncome = incomes.find((i) => i.userId === userId)?.amount ?? 0;
-  return personAdjustmentShare(delta, personIncome, total);
+  const contribution = sharedBucket.contributions.find((c) => c.userId === userId);
+  if (!contribution) return new Decimal(0);
+
+  return personSharedExpensesDelta(contribution.amount, contribution.spent ?? 0);
 }
 
 /** Mes calendario siguiente a uno dado, si ya existe en el sistema (o null). */

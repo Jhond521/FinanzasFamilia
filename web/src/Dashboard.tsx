@@ -415,8 +415,8 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           </h2>
           <p className="mb-4 max-w-xl text-sm leading-relaxed text-white/85">
             {Number(summary.close.sharedExpensesExcess) > 0
-              ? `Gastos del Mes se pasó ${formatCOP(summary.close.sharedExpensesExcess)}. El exceso se descuenta de lo que se mueve a ahorros, proporcional al ingreso de cada uno.`
-              : 'Gastos del Mes no se paso del presupuesto: el ahorro real es igual al aporte calculado a Ahorros Conjuntos.'}
+              ? `Gastos del Mes se pasó ${formatCOP(summary.close.sharedExpensesExcess)} en total. El sobregasto (o el bono, si sobró) lo asume quien lo generó — cada quien responde por su propia bolsa, no se reparte por ingreso.`
+              : 'Gastos del Mes no se pasó del presupuesto en total: el ahorro real de cada quien depende de su propia bolsa (aporte a Ahorros Conjuntos + lo que le sobró o faltó en Gastos del Mes).'}
           </p>
           <div className="flex flex-wrap gap-8">
             {summary.close.perPerson.map((p) => (
