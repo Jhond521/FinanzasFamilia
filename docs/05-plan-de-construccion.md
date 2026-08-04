@@ -24,6 +24,14 @@ Summary congelado, ahorro real con ajuste por sobregasto, "dejar en cuenta", pan
 ## Fase 6 — Pulido (1 sesión)
 Diseño final (Claude Design), estados vacíos, exportar mes a xlsx, revisar accesibilidad móvil.
 
+## Fases post-MVP (ya construidas, más allá del plan original)
+- **Cuadre de Inicio**: confirmar saldo en cuenta al empezar el mes, calcular cuánto dejar y cuánto mover a ahorros.
+- **Cierre de mes refinado, individual por persona**: wizard paso a paso (gasto grande, breakdown de movimientos en Nu, saldo final, sugerencia de "Rendimientos" con umbral configurable en Configuración).
+- **Ledger de Ahorros Familiares**: histórico editable de aportes/ajustes/rendimientos/movimientos manuales por persona.
+- **Corrección del reparto de bolsas**: el aporte por persona reconcilia bolsas `mitad_y_mitad` con `proporcional_al_ingreso` para que la suma de una persona dé exacto su ingreso (antes no cuadraba con ingresos desiguales).
+- **Semáforo de 3 estados y resumen del mes** en el Dashboard (antes binario, sin vista consolidada).
+- **"Actualizar Sheet"**: integración con Google Sheets API (service account) para espejar transacciones verificadas al archivo real que se usaba antes de la app.
+
 ## Roadmap post-MVP
 Integración WhatsApp (bot que crea quick_entries), notificaciones ("llevas 80% de la bolsa conjunta"), estadísticas de cobertura del registro rápido, import automático del correo del banco, más bancos.
 

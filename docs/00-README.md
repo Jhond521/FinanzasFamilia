@@ -19,6 +19,9 @@ Trazabilidad casos de uso → spec:
 | 4. Match automático extracto ↔ registros manuales | PRD: pipeline paso 1 · services/matcher.ts |
 | 5. Preguntar lo dudoso, automatizar lo posible | Cola de revisión + reglas auto/sugerir + aprendizaje |
 | Obj. duplicados en archivos parciales | Modelo: Deduplicación por conteo · import_batches |
-| Obj. consolidado, ahorro real, cuánto mover/dejar | PRD: Cierre · summary.ts · Pantalla 2 |
+| Obj. consolidado, ahorro real, cuánto mover/dejar | PRD: Cierre · summary.ts/familySavings.ts · Pantalla 2 |
+| Cuadre de Inicio y cierre individual por persona (wizard) | PRD: RF7 · API: opening-reconciliation, close-* · Pantalla 2 |
+| Ledger de Ahorros Familiares, editable | PRD: RF7 · API: family-savings · Pantalla 7 |
+| Botón "Actualizar Sheet" (respaldo en Google Sheets real) | PRD: RF7 · API: sheet-export · Pantalla 5 |
 | Tarjetas Nu Bank per/con + conciliación (módulo independiente, no afecta bolsas) | PRD: Tarjetas · card_months/card_items · Pantalla 6 |
 | Docker + Railway dev/prod + GitHub | 04-arquitectura |

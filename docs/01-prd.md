@@ -92,9 +92,38 @@ Pipeline al importar, en orden:
 
 ### RF7 — Dashboard y cierre de mes
 
-- Dashboard permanente: por bolsa presupuesto vs. gastado vs. disponible con semáforo (vamos bien / nos pasamos). Conjunto contra Gastos del Mes; personal de cada uno contra su Dinero Personal.
-- **Ahorro real**: si Conjunto se pasó, el exceso se descuenta de lo que se mueve a ahorros, mostrando de dónde salió. Resultado: "John mueve $X a ahorros, Lina mueve $Y; dejar en cuenta $Z cada uno".
-- Cerrar mes: congela cifras (summary JSON), genera resumen comparable mes a mes y crea el mes siguiente con la config vigente. Reabrir permitido.
+- Dashboard permanente: por bolsa presupuesto vs. gastado vs. disponible, con semáforo de **3 estados**
+  (verde: <80% gastado · amarillo: 80–100% · rojo: >100%), tanto a nivel de bolsa como del gasto
+  individual de cada persona dentro de ella. Card "Resumen del mes" con ingresos totales vs. gastado
+  total (conjunto + personal de ambos). Conjunto contra Gastos del Mes; personal de cada uno contra su
+  Dinero Personal.
+- **Aporte por persona**: cada bolsa reparte primero su parte `mitad_y_mitad` (si aplica), y el ingreso
+  remanente de cada persona se reparte entre las bolsas `proporcional_al_ingreso` — así la suma de lo
+  asignado a una persona en todas las bolsas da exacto su ingreso (no se puede repartir bolsas con
+  reglas distintas sin reconciliarlas).
+- **Ahorro real**: cada persona responde por su propia bolsa de Gastos del Mes — si se pasó de su
+  propio presupuesto, es un retiro de sus ahorros; si le sobró, es un bono. No se reparte el
+  excedente/bono del hogar por ingreso (el total del hogar es solo informativo). Resultado: "John
+  mueve $X a ahorros, Lina mueve $Y; dejar en cuenta $Z cada uno".
+- **Cuadre de Inicio** (una vez por persona, al empezar el mes con las transacciones ya importadas):
+  digita el saldo actual en su cuenta bancaria; la app calcula cuánto dejar en cuenta y cuánto mover a
+  la cuenta de ahorros (Nu), y confirma si el saldo declarado cuadra con lo calculado.
+- **Cierre de mes, individual por persona**, con un wizard paso a paso: bloquea si quedan transacciones
+  sin clasificar o si el Cuadre de Inicio del mes siguiente no se ha hecho; pregunta por un gasto
+  grande de ahorros opcional (vacaciones, compras grandes — afecta al mes que entra, no al que se
+  cierra); muestra instrucciones concretas de qué mover en la cuenta de ahorros y qué saldo debe quedar
+  tras cada paso; al confirmar el saldo real final, sugiere registrar la diferencia como "Rendimientos"
+  si es positiva y está dentro de un umbral configurable. El mes solo pasa a `cerrado` cuando ambas
+  personas cerraron su parte; reabrir individualmente es posible y revierte el mes a `abierto`.
+- **Ahorros Familiares**: ledger histórico de todo lo que entra/sale de la cajita de ahorros de cada
+  persona — aporte mensual (del mes que entra), ajuste del cierre, rendimientos, saldo inicial, y
+  movimientos manuales (correcciones, gastos grandes). Cada entrada es editable y borrable a mano
+  (con confirmación) para corregir errores sin tener que reabrir/re-cerrar un mes.
+- **"Actualizar Sheet"**: botón en la pantalla de transacciones que sube las transacciones ya
+  verificadas (según filtro Yo/pareja/ambos) al Google Sheet real que usaba la pareja antes de esta
+  app, como respaldo/consulta — crea o reutiliza un tab `Auto-[Mes]-[Año]` copiando la plantilla real.
+  Deshabilitado si quedan transacciones sin clasificar de las personas seleccionadas.
+- Cerrar mes: congela cifras (summary JSON), genera resumen comparable mes a mes y crea el mes siguiente con la config vigente.
 
 ## 4. Objetivos / criterios de aceptación
 
@@ -105,14 +134,14 @@ Pipeline al importar, en orden:
 
 ## 5. Requerimientos técnicos
 
-- **Stack**: Node.js 22 + TypeScript + Express; React 18 + Vite + Tailwind (PWA básica); PostgreSQL + Prisma; validación con zod; xlsx con SheetJS. Monolito: Express sirve el frontend compilado y `/api/*` en un solo contenedor.
-- **Auth**: Google OAuth 2.0 (passport o Auth.js), whitelist por variable de entorno (`ALLOWED_EMAILS=jhond5@gmail.com,lina.tic.isc@gmail.com`), credenciales OAuth separadas por ambiente (dev/prod tienen redirect URIs distintas).
-- **API REST** `/api`: auth, months (+ close/summary/incomes), quick-entries, imports (+ undo), transactions (+ bulk), rules (+ suggestions/apply), buckets, cards. JSON, montos como string decimal, fechas ISO.
+- **Stack**: Node.js 22 + TypeScript + Express; React 18 + Vite + Tailwind (PWA básica); PostgreSQL + Prisma; validación con zod; xlsx con SheetJS; `googleapis` para el export a Google Sheets. Monolito: Express sirve el frontend compilado y `/api/*` en un solo contenedor.
+- **Auth**: Google OAuth 2.0 (passport o Auth.js), whitelist por variable de entorno (`ALLOWED_EMAILS=jhond5@gmail.com,lina.tic.isc@gmail.com`), credenciales OAuth separadas por ambiente (dev/prod tienen redirect URIs distintas). El export a Google Sheets usa credenciales **separadas** de un service account propio, no las de este login.
+- **API REST** `/api`: auth, months (+ summary/incomes/export/sheet-export/comparison), Cuadre de Inicio, cierre individual (close-check/close-preview/close-mine/reopen-mine/closures), family-savings (ledger editable), quick-entries, imports (+ undo), transactions (+ bulk/match), rules (+ suggestions/apply), buckets, cards, settings. JSON, montos como string decimal, fechas ISO. Detalle completo en `03-api.md`.
 - **Docker**: Dockerfile multi-stage; `CMD: npx prisma migrate deploy && node dist/index.js`. `docker-compose.yml` para desarrollo local (app + postgres).
 - **GitHub + Railway**: ramas `develop` → environment development y `main` → production, cada uno con su Postgres. CI en PR (lint + typecheck + tests). Migraciones automáticas en deploy.
-- Lógica de negocio (distribución, dedupe, match, summary) en servicios puros con tests unitarios; regresión contra los números reales de Junio 2026 (ingresos 11,439,100 + 7,745,749 → bolsas 36/16/0/48).
+- Lógica de negocio (distribución, dedupe, match, summary, familySavings) en servicios puros con tests unitarios; regresión contra los números reales de meses reales (ver `distribution.test.ts`, `summary.test.ts`, `familySavings.test.ts`).
 - Seed idempotente: usuarios John y Lina, buckets actuales y reglas semilla.
 
 ## 6. Fuera de alcance del MVP
 
-Integración con WhatsApp o APIs bancarias, multi-moneda, más de dos usuarios, presupuestos por categoría de gasto (solo por bolsa), app nativa. Roadmap: bot de WhatsApp, alertas de bolsa al 80%, export mensual a xlsx, import automático del correo del banco, más bancos.
+Integración con APIs bancarias, multi-moneda, más de dos usuarios, presupuestos por categoría de gasto (solo por bolsa), app nativa. **Ya implementado** (dejó de ser roadmap): export mensual a xlsx, y un puente de vuelta a Google Sheets ("Actualizar Sheet") para quien quiera mantener el archivo viejo como respaldo — no contradice el objetivo original de reemplazarlo como herramienta de trabajo diario, es solo un espejo opcional. Roadmap pendiente: bot de WhatsApp, alertas de bolsa al 80%, import automático del correo del banco, más bancos.
