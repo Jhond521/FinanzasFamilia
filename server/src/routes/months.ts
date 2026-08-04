@@ -519,11 +519,21 @@ async function writeClosingLedgerEntries(
   bigExpenseDescription: string | undefined,
   yieldAmount: string | number | Decimal | undefined,
 ): Promise<void> {
+  // "Ahorros de [Mes]" es el aporte a Ahorros Conjuntos del mes que ENTRA (ej. al cerrar Julio, es
+  // el de Agosto) -- para cuando se cierra un mes, el mes que entra ya recibio su propio Cuadre de
+  // Inicio (ticket #40), y este paso del cierre registra en el ledger lo que ya se movio. Si por
+  // algun motivo el mes siguiente aun no existe (la UI del wizard ya lo bloquea, pero no hay
+  // re-validacion server-side), se usa el mes que se cierra como fallback para no crashear -- caso
+  // borde que no deberia darse en uso normal (ticket ##55).
+  const nextMonth = await findNextMonth(month);
+  const savingsMonth = nextMonth ?? month;
+
   const [baseSavings, adjustment] = await Promise.all([
-    monthlySavingsBudget(month, userId),
+    monthlySavingsBudget(savingsMonth, userId),
     personSharedExpensesAdjustment(month, userId),
   ]);
   const monthLabel = `${MESES[month.month - 1]} ${month.year}`;
+  const savingsMonthLabel = `${MESES[savingsMonth.month - 1]} ${savingsMonth.year}`;
 
   await prisma.familySavingsEntry.deleteMany({
     where: { monthId: month.id, userId, type: { in: ['monthly_savings', 'adjustment', 'yield'] } },
@@ -533,10 +543,13 @@ async function writeClosingLedgerEntries(
     data: [
       {
         userId,
+        // monthId se mantiene en el mes que se cierra (no en savingsMonth) para que el deleteMany
+        // de arriba encuentre y reemplace esta entrada si se reabre y se vuelve a cerrar este mismo
+        // mes -- monthId es solo bookkeeping interno, no se usa para filtrar en la UI.
         monthId: month.id,
         type: 'monthly_savings',
         amount: baseSavings,
-        description: `Ahorros de ${monthLabel}`,
+        description: `Ahorros de ${savingsMonthLabel}`,
       },
       {
         userId,
@@ -560,7 +573,6 @@ async function writeClosingLedgerEntries(
   });
 
   if (bigExpenseAmount && new Decimal(bigExpenseAmount).isPositive()) {
-    const nextMonth = await findNextMonth(month);
     if (nextMonth) {
       const tag = `Gasto grande de ahorros (cierre de ${monthLabel}):`;
       // Idempotente: si se reabre y se vuelve a cerrar este mismo mes con otro gasto grande,
