@@ -50,7 +50,9 @@ cardsRouter.get('/:id/months/:monthId', async (req, res) => {
 
   let cardMonth = await prisma.cardMonth.findUnique({
     where: { creditCardId_monthId: { creditCardId: card.id, monthId: month.id } },
-    include: { items: { orderBy: [{ date: 'asc' }, { createdAt: 'asc' }] } },
+    // Descendente (mas reciente primero, ##63) — nulls explicito porque el default de Postgres
+    // para DESC es NULLS FIRST y los items sin fecha deben seguir agrupados al final.
+    include: { items: { orderBy: [{ date: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }] } },
   });
   if (!cardMonth) {
     cardMonth = await prisma.cardMonth.create({
