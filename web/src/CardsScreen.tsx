@@ -195,7 +195,7 @@ export default function CardsScreen() {
                   Subir extracto Nu
                   <input
                     type="file"
-                    accept=".xlsx,.csv"
+                    accept=".xlsx,.csv,.pdf"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
