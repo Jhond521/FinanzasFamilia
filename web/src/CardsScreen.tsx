@@ -191,12 +191,19 @@ export default function CardsScreen() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-bold text-ink">Items registrados</h2>
               <div className="flex gap-2">
-                <label className="cursor-pointer rounded-lg border border-line px-3 py-2 text-xs font-semibold text-ink-muted">
-                  Subir extracto Nu
+                <label
+                  className={`rounded-lg border border-line px-3 py-2 text-xs font-semibold text-ink-muted ${
+                    importMutation.isPending ? 'opacity-50' : 'cursor-pointer'
+                  }`}
+                >
+                  {/* El import de PDF corre OCR server-side (##61) y tarda varios segundos —
+                      a diferencia de csv/xlsx, que es casi instantáneo — de ahí el estado de carga. */}
+                  {importMutation.isPending ? 'Leyendo extracto…' : 'Subir extracto Nu'}
                   <input
                     type="file"
                     accept=".xlsx,.csv,.pdf"
                     className="hidden"
+                    disabled={importMutation.isPending}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) importMutation.mutate(file);
@@ -220,6 +227,12 @@ export default function CardsScreen() {
                 </button>
               </div>
             </div>
+
+            {importMutation.isError && (
+              <p className="mb-4 rounded-lg bg-danger-light p-2 text-xs font-semibold text-danger">
+                {importMutation.error instanceof Error ? importMutation.error.message : 'No se pudo leer el archivo'}
+              </p>
+            )}
 
             <CardQuickAddRow onSave={(input) => createItemMutation.mutateAsync(input).then(() => undefined)} />
 
