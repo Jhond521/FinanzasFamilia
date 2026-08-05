@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createCardItem,
@@ -221,6 +221,8 @@ export default function CardsScreen() {
               </div>
             </div>
 
+            <CardQuickAddRow onSave={(input) => createItemMutation.mutateAsync(input).then(() => undefined)} />
+
             {showItemForm && (
               <ItemForm
                 isAdjustment={showItemForm === 'adjustment'}
@@ -345,6 +347,132 @@ export default function CardsScreen() {
           </section>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Fila de captura rápida (ticket #60): permite agregar items de tarjeta seguidos usando solo el
+ * teclado — Tab entre campos (orden nativo del DOM), Enter en "Tipo" guarda y vuelve a enfocar
+ * "Fecha" de una fila vacía nueva, sin soltar el teclado. Coexiste con `ItemForm` (botón "+ Item")
+ * para cuando se prefiere el formulario de un solo item. */
+function CardQuickAddRow({ onSave }: { onSave: (input: CardItemInput) => Promise<void> }) {
+  const [date, setDate] = useState('');
+  const [description, setDescription] = useState('');
+  const [amount, setAmount] = useState('');
+  const [type, setType] = useState<CardItemType>('personal');
+  const [error, setError] = useState<string | null>(null);
+
+  const dateRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLInputElement>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const typeRef = useRef<HTMLSelectElement>(null);
+  // Guarda contra doble-submit sin usar `disabled`: deshabilitar los campos mientras se guarda le
+  // quita el foco al elemento (un input disabled no puede tener foco) y rompe el auto-focus de
+  // vuelta a "Fecha" al terminar — ver hallazgo de prueba manual del ticket #60.
+  const savingRef = useRef(false);
+
+  async function trySave() {
+    if (savingRef.current) return;
+    setError(null);
+    if (!description.trim()) {
+      setError('La descripción es obligatoria');
+      descRef.current?.focus();
+      return;
+    }
+    if (!amount || Number.isNaN(Number(amount)) || Number(amount) === 0) {
+      setError('El monto no puede ser cero');
+      amountRef.current?.focus();
+      return;
+    }
+    savingRef.current = true;
+    try {
+      await onSave({ description: description.trim(), amount, type, date: date || undefined });
+      setDate('');
+      setDescription('');
+      setAmount('');
+      setType('personal');
+      dateRef.current?.focus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar el item');
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  function handleFieldKeyDown(
+    e: KeyboardEvent<HTMLInputElement | HTMLSelectElement>,
+    field: 'date' | 'description' | 'amount' | 'type',
+  ) {
+    // Un <input type="date"> nativo le da su propio significado a Tab: mueve el foco entre sus
+    // segmentos internos (mes/día/año) antes de salir del control. Interceptamos Tab (además de
+    // Enter) para que "Fecha" siga contando como un solo campo en la navegación de la fila.
+    const isForwardTab = e.key === 'Tab' && !e.shiftKey;
+    if (e.key !== 'Enter' && !isForwardTab) return;
+    if (field === 'date') {
+      e.preventDefault();
+      descRef.current?.focus();
+    } else if (field === 'description') {
+      e.preventDefault();
+      amountRef.current?.focus();
+    } else if (field === 'amount') {
+      e.preventDefault();
+      typeRef.current?.focus();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      void trySave();
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-dashed border-line p-3">
+      <div className="mb-2 hidden grid-cols-[110px_1fr_130px_110px] gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted sm:grid">
+        <span>Fecha</span>
+        <span>Descripción</span>
+        <span>Monto</span>
+        <span>Tipo</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[110px_1fr_130px_110px]">
+        <input
+          ref={dateRef}
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          onKeyDown={(e) => handleFieldKeyDown(e, 'date')}
+          className="col-span-2 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
+        />
+        <input
+          ref={descRef}
+          type="text"
+          placeholder="Descripción"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => handleFieldKeyDown(e, 'description')}
+          className="col-span-2 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
+        />
+        <CurrencyInput
+          ref={amountRef}
+          value={amount}
+          onChange={setAmount}
+          onKeyDown={(e) => handleFieldKeyDown(e, 'amount')}
+          allowNegative
+          className="text-sm"
+          ariaLabel="Monto del item (captura rápida)"
+        />
+        <select
+          ref={typeRef}
+          value={type}
+          onChange={(e) => setType(e.target.value as CardItemType)}
+          onKeyDown={(e) => handleFieldKeyDown(e, 'type')}
+          className="rounded-lg border border-line px-2 py-2 text-sm"
+        >
+          <option value="personal">Personal</option>
+          <option value="joint">Conjunto</option>
+        </select>
+      </div>
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+      <p className="mt-2 text-xs text-ink-muted">
+        Tab para moverte entre campos · Enter en "Tipo" guarda y sigue con la siguiente compra.
+      </p>
     </div>
   );
 }
