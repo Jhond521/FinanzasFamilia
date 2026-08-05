@@ -6,6 +6,8 @@ import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
 import { cardMonthProgress } from '../services/cardProgress';
 import { parseNuFile } from '../services/nuParser';
+import { ocrPdfPages } from '../services/nuPdfOcr';
+import { parseNuPdfText } from '../services/nuPdfParsing';
 
 export const cardMonthsRouter = Router();
 export const cardItemsRouter = Router();
@@ -144,10 +146,10 @@ cardItemsRouter.delete('/:id', async (req, res) => {
 });
 
 /**
- * Precarga items desde el extracto Nu (csv/xlsx) SIN guardarlos todavia — el usuario los revisa y
- * confirma uno a uno (POST /:id/items) antes de que queden en BD (a diferencia del import
- * bancario de Fase 3, que si inserta directo). Ver Notas tecnicas del ticket #3 sobre el formato
- * asumido del extracto.
+ * Precarga items desde el extracto Nu (csv/xlsx, o PDF vía OCR — ##61) SIN guardarlos todavia — el
+ * usuario los revisa y confirma uno a uno (POST /:id/items) antes de que queden en BD (a diferencia
+ * del import bancario de Fase 3, que si inserta directo). Ver Notas tecnicas del ticket #3 sobre el
+ * formato asumido del extracto csv/xlsx, y ##61 sobre el pipeline de OCR del PDF.
  */
 cardMonthsRouter.post('/:id/import', upload.single('file'), async (req, res) => {
   const cardMonth = await prisma.cardMonth.findUnique({ where: { id: `${req.params.id}` } });
@@ -159,8 +161,9 @@ cardMonthsRouter.post('/:id/import', upload.single('file'), async (req, res) => 
     badRequest(res, 'file_required', 'Falta el archivo del extracto Nu');
     return;
   }
+  const isPdf = req.file.mimetype === 'application/pdf' || req.file.originalname.toLowerCase().endsWith('.pdf');
   try {
-    const rows = parseNuFile(req.file.buffer);
+    const rows = isPdf ? parseNuPdfText(await ocrPdfPages(req.file.buffer)) : parseNuFile(req.file.buffer);
     res.json({ items: rows });
   } catch (error) {
     badRequest(res, 'invalid_file', error instanceof Error ? error.message : 'No se pudo leer el archivo');

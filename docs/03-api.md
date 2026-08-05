@@ -164,7 +164,7 @@ GET  /api/cards/:id/months/:monthId       → items + amountPaid + dif
 PUT  /api/card-months/:id                 { amountPaid }
 POST /api/card-months/:id/items           { description, date?, amount, type, isAdjustment? }
                                           → respuesta incluye running total: Σ items, dif restante
-POST /api/card-months/:id/import          multipart: extracto Nu (csv/xlsx) → precarga items
+POST /api/card-months/:id/import          multipart: extracto Nu (csv/xlsx, o PDF vía OCR — ##61) → precarga items
 PUT  /api/card-items/:id
 DELETE /api/card-items/:id
 ```

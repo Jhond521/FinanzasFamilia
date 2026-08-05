@@ -88,7 +88,7 @@ Pipeline al importar, en orden:
 - Control **separado del flujo mensual**: sus cifras NO afectan las bolsas — ni los items ni el pago (el pago se hace desde la cuenta de ahorros).
 - **Flujo**: primero se escribe el `monto pagado` de la tarjeta ese mes; luego se registran las compras una a una (`descripción`, `fecha`, `monto`, `tipo` per/con) hasta que la suma cuadre con el pago. La UI muestra en vivo el progreso: `Σ items` vs. `monto pagado` y la `Dif` restante, con item de "Ajuste" permitido para cerrar diferencias pequeñas.
 - **Finalidad**: saber qué porción del pago total fue personal y qué porción conjunta (totales informativos).
-- **Import opcional del extracto Nu**: si logran exportar un archivo (csv/xlsx), la app permite subirlo para precargar los items en lugar de digitarlos uno a uno (parser propio de Nu, separado del de Bancolombia). Nu normalmente solo deja tomar imagen: soportar imagen/OCR queda como fase futura.
+- **Import opcional del extracto Nu**: si logran exportar un archivo (csv/xlsx), la app permite subirlo para precargar los items en lugar de digitarlos uno a uno (parser propio de Nu, separado del de Bancolombia). Nu normalmente solo deja tomar el extracto en PDF sin capa de texto (una imagen por página): un pipeline de OCR (rasterizar + Tesseract, ##61) lo lee igual y precarga los items — siempre pasando por la misma pantalla de revisión antes de guardar, nunca persistir directo un monto leído por OCR.
 
 ### RF7 — Dashboard y cierre de mes
 

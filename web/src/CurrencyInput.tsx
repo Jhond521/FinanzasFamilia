@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { forwardRef, useEffect, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 import { formatAmountDisplay, sanitizeAmountInput } from './lib/money';
 
 type CurrencyInputProps = {
@@ -7,6 +7,7 @@ type CurrencyInputProps = {
   onChange: (rawValue: string) => void;
   /** Se dispara al perder el foco — util para confirmar/guardar el valor (ej. PUT al salir del campo). */
   onBlur?: () => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -20,10 +21,11 @@ type CurrencyInputProps = {
   autoFocus?: boolean;
 };
 
-export function CurrencyInput({
+export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(function CurrencyInput({
   value,
   onChange,
   onBlur,
+  onKeyDown,
   disabled,
   placeholder = '0',
   className = '',
@@ -31,7 +33,7 @@ export function CurrencyInput({
   allowNegative = false,
   ariaLabel,
   autoFocus,
-}: CurrencyInputProps) {
+}, ref) {
   const [display, setDisplay] = useState(() => formatAmountDisplay(value));
   const isLarge = variant === 'large';
 
@@ -55,6 +57,7 @@ export function CurrencyInput({
         $
       </span>
       <input
+        ref={ref}
         type="text"
         inputMode="decimal"
         className={
@@ -65,6 +68,7 @@ export function CurrencyInput({
         value={display}
         onChange={handleChange}
         onBlur={onBlur}
+        onKeyDown={onKeyDown}
         disabled={disabled}
         placeholder={placeholder}
         aria-label={ariaLabel}
@@ -72,4 +76,4 @@ export function CurrencyInput({
       />
     </div>
   );
-}
+});
