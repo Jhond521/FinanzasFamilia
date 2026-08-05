@@ -438,7 +438,7 @@ function CardQuickAddRow({ onSave }: { onSave: (input: CardItemInput) => Promise
           value={date}
           onChange={(e) => setDate(e.target.value)}
           onKeyDown={(e) => handleFieldKeyDown(e, 'date')}
-          className="col-span-2 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
+          className="col-span-2 min-w-0 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
         />
         <input
           ref={descRef}
@@ -447,23 +447,28 @@ function CardQuickAddRow({ onSave }: { onSave: (input: CardItemInput) => Promise
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onKeyDown={(e) => handleFieldKeyDown(e, 'description')}
-          className="col-span-2 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
+          className="col-span-2 min-w-0 rounded-lg border border-line px-2 py-2 text-sm text-ink sm:col-span-1"
         />
-        <CurrencyInput
-          ref={amountRef}
-          value={amount}
-          onChange={setAmount}
-          onKeyDown={(e) => handleFieldKeyDown(e, 'amount')}
-          allowNegative
-          className="text-sm"
-          ariaLabel="Monto del item (captura rápida)"
-        />
+        {/* CurrencyInput no expone su div envolvente a className: sin este wrapper con min-w-0,
+            el ancho de contenido del input (mayor al de la columna fija de 130px) hace que se
+            salga de su celda de grid y tape la columna de "Tipo" — el bug de "grid blowout". */}
+        <div className="min-w-0">
+          <CurrencyInput
+            ref={amountRef}
+            value={amount}
+            onChange={setAmount}
+            onKeyDown={(e) => handleFieldKeyDown(e, 'amount')}
+            allowNegative
+            className="w-full text-sm"
+            ariaLabel="Monto del item (captura rápida)"
+          />
+        </div>
         <select
           ref={typeRef}
           value={type}
           onChange={(e) => setType(e.target.value as CardItemType)}
           onKeyDown={(e) => handleFieldKeyDown(e, 'type')}
-          className="rounded-lg border border-line px-2 py-2 text-sm"
+          className="min-w-0 rounded-lg border border-line px-2 py-2 text-sm"
         >
           <option value="personal">Personal</option>
           <option value="joint">Conjunto</option>
