@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { CurrencyInput } from './CurrencyInput';
@@ -14,6 +14,15 @@ import {
   type QuickEntryType,
 } from './lib/api';
 import { formatCOP, MESES } from './lib/money';
+import {
+  enqueuePendingQuickEntry,
+  listPendingQuickEntries,
+  removePendingQuickEntry,
+  setPendingQuickEntryError,
+  updatePendingQuickEntry,
+  type PendingQuickEntry,
+} from './lib/offlineQueue';
+import { syncPendingQuickEntries } from './lib/offlineSync';
 
 type Props = {
   currentUser: CurrentUser;
@@ -57,8 +66,11 @@ export default function QuickEntry({ currentUser }: Props) {
   const [customDate, setCustomDate] = useState(todayStr);
   const [userId, setUserId] = useState(currentUser.id);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingPendingId, setEditingPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingDiscardId, setConfirmingDiscardId] = useState<string | null>(null);
+  const [pendingEntries, setPendingEntries] = useState<PendingQuickEntry[]>([]);
 
   const date = dateMode === 'today' ? todayStr : dateMode === 'yesterday' ? yesterdayStr : customDate;
 
@@ -80,6 +92,7 @@ export default function QuickEntry({ currentUser }: Props) {
     setCustomDate(todayStr);
     setUserId(currentUser.id);
     setEditingId(null);
+    setEditingPendingId(null);
     setError(null);
   }
 
@@ -90,16 +103,80 @@ export default function QuickEntry({ currentUser }: Props) {
     ]);
   }
 
+  const refreshPending = useCallback(async () => {
+    setPendingEntries(await listPendingQuickEntries());
+  }, []);
+
+  // Al montar y cada vez que vuelve la conexion, intenta vaciar la cola offline (##65).
+  useEffect(() => {
+    let cancelled = false;
+    async function trySync() {
+      const result = await syncPendingQuickEntries();
+      if (cancelled) return;
+      if (result.synced.length > 0) {
+        await invalidateAfterSave();
+      }
+      if (result.synced.length > 0 || result.failed.length > 0) {
+        await refreshPending();
+      }
+    }
+    refreshPending();
+    trySync();
+    window.addEventListener('online', trySync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', trySync);
+    };
+  }, [refreshPending]);
+
+  async function retryPendingEntry(localId: string) {
+    await setPendingQuickEntryError(localId, null);
+    await refreshPending();
+    const result = await syncPendingQuickEntries();
+    if (result.synced.length > 0) {
+      await invalidateAfterSave();
+    }
+    await refreshPending();
+  }
+
+  async function discardPendingEntry(localId: string) {
+    await removePendingQuickEntry(localId);
+    setConfirmingDiscardId(null);
+    if (editingPendingId === localId) {
+      resetForm();
+    }
+    await refreshPending();
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = { amount, description, type, date, userId };
+      if (editingPendingId) {
+        // Editar un registro todavia sin sincronizar es puramente local: no toca la red.
+        await updatePendingQuickEntry(editingPendingId, payload);
+        return null;
+      }
       if (editingId) {
         return updateQuickEntry(editingId, payload);
       }
-      return createQuickEntry(payload);
+      try {
+        return await createQuickEntry(payload);
+      } catch (err) {
+        // Sin red: fetch() rechaza con TypeError (no es un error del servidor). En vez de mostrar
+        // error, se encola localmente y se sincroniza solo cuando vuelva la conexion.
+        if (err instanceof TypeError) {
+          await enqueuePendingQuickEntry(payload);
+          return null;
+        }
+        throw err;
+      }
     },
-    onSuccess: async () => {
-      await invalidateAfterSave();
+    onSuccess: async (result) => {
+      if (result === null) {
+        await refreshPending();
+      } else {
+        await invalidateAfterSave();
+      }
       resetForm();
     },
     onError: (err: unknown) => {
@@ -120,6 +197,25 @@ export default function QuickEntry({ currentUser }: Props) {
 
   function startEdit(entry: QuickEntryRecord) {
     setEditingId(entry.id);
+    setEditingPendingId(null);
+    setAmount(entry.amount);
+    setDescription(entry.description);
+    setType(entry.type);
+    setUserId(entry.userId);
+    if (entry.date === todayStr) {
+      setDateMode('today');
+    } else if (entry.date === yesterdayStr) {
+      setDateMode('yesterday');
+    } else {
+      setDateMode('custom');
+      setCustomDate(entry.date);
+    }
+    setError(null);
+  }
+
+  function startEditPending(entry: PendingQuickEntry) {
+    setEditingPendingId(entry.localId);
+    setEditingId(null);
     setAmount(entry.amount);
     setDescription(entry.description);
     setType(entry.type);
@@ -152,7 +248,7 @@ export default function QuickEntry({ currentUser }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 p-4 pb-10">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{editingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
+        <h1 className="text-xl font-semibold text-ink">{editingId || editingPendingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">
           {currentUser.name.charAt(0)}
         </div>
@@ -257,7 +353,7 @@ export default function QuickEntry({ currentUser }: Props) {
         {error && <p className="text-sm text-danger">{error}</p>}
 
         <div className="flex gap-2">
-          {editingId && (
+          {(editingId || editingPendingId) && (
             <button
               type="button"
               onClick={resetForm}
@@ -275,6 +371,66 @@ export default function QuickEntry({ currentUser }: Props) {
           </button>
         </div>
       </form>
+
+      {pendingEntries.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            Pendientes de sincronizar
+          </h2>
+          <div className="flex flex-col divide-y divide-line rounded-xl border border-warning bg-warning-light">
+            {pendingEntries.map((entry) => {
+              const owner = users?.find((u) => u.id === entry.userId);
+              return (
+                <div key={entry.localId} className="flex flex-col gap-2 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button type="button" onClick={() => startEditPending(entry)} className="flex-1 text-left">
+                      <div className="text-sm font-semibold text-ink">{entry.description}</div>
+                      <div className="text-xs text-ink-muted">
+                        {formatEntryDate(entry.date)} · {TYPE_LABEL[entry.type]} · {owner?.name ?? '—'}
+                      </div>
+                    </button>
+                    <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    {entry.error ? (
+                      <span className="text-xs text-danger">{entry.error}</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-warning">Pendiente de sincronizar</span>
+                    )}
+                    {confirmingDiscardId === entry.localId ? (
+                      <div className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold">
+                        <span className="text-ink-muted">¿Seguro?</span>
+                        <button type="button" onClick={() => discardPendingEntry(entry.localId)} className="text-danger">
+                          Si, borrar
+                        </button>
+                        <button type="button" onClick={() => setConfirmingDiscardId(null)} className="text-ink-muted">
+                          No
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3 whitespace-nowrap text-xs font-semibold">
+                        {entry.error && (
+                          <button type="button" onClick={() => retryPendingEntry(entry.localId)} className="text-brand">
+                            Reintentar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDiscardId(entry.localId)}
+                          className="text-danger"
+                          aria-label={`Borrar ${entry.description}`}
+                        >
+                          Borrar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {currentMonth && recentEntries && recentEntries.length === 0 && (
         <p className="text-center text-sm text-ink-muted">Todavia no hay registros este mes.</p>

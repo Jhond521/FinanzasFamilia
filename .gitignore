@@ -8,4 +8,5 @@ dist/
 .vscode/
 server/generated/
 web/dist/
+web/dev-dist/
 server/dist/
