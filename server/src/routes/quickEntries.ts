@@ -80,8 +80,10 @@ quickEntriesRouter.post('/', async (req, res) => {
     return;
   }
 
-  // Los gastos se guardan negativos (igual que el extracto bancario), sin importar el signo recibido.
-  const amount = new Decimal(data.amount).abs().negated();
+  // Se niega el signo escrito (no abs()): un monto positivo (gasto normal) queda negativo, igual
+  // que el extracto bancario; uno negativo (##67 -- un ingreso puntual, ej. una transferencia que
+  // les hicieron) queda positivo, igual que un ingreso real en el extracto.
+  const amount = new Decimal(data.amount).negated();
 
   const quickEntry = await prisma.quickEntry.create({
     data: {
@@ -147,7 +149,7 @@ quickEntriesRouter.put('/:id', async (req, res) => {
     data: {
       monthId,
       userId: data.userId ?? existing.userId,
-      amount: data.amount !== undefined ? new Decimal(data.amount).abs().negated() : existing.amount,
+      amount: data.amount !== undefined ? new Decimal(data.amount).negated() : existing.amount,
       description: data.description ?? existing.description,
       type: data.type ?? existing.type,
       date: data.date ? parseDateOnly(data.date) : existing.date,

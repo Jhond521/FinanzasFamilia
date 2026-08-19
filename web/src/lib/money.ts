@@ -28,9 +28,10 @@ export function formatCOP(amount: string): string {
  * distinguen sin ambiguedad.
  *
  * `allowNegative` habilita un "-" inicial (ej. items de tarjeta que admiten devoluciones/
- * cancelaciones, ver ticket #3) — por defecto false, igual que el comportamiento previo, para no
- * afectar los demas usos de CurrencyInput (ingresos, registro rapido) donde el monto siempre es
- * positivo y el signo lo aplica el backend.
+ * cancelaciones -- ticket #3; o un ingreso puntual en el registro rapido -- ticket ##67) — por
+ * defecto false, igual que el comportamiento previo, para no afectar los demas usos de
+ * CurrencyInput (ingresos del mes) donde el monto siempre es positivo y el signo lo aplica el
+ * backend.
  */
 export function sanitizeAmountInput(raw: string, allowNegative = false): string {
   const isNegative = allowNegative && raw.trimStart().startsWith('-');

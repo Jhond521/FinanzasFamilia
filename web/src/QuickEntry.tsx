@@ -261,7 +261,20 @@ export default function QuickEntry({ currentUser }: Props) {
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5 rounded-xl border border-line bg-white p-4">
-        <CurrencyInput variant="large" value={amount} onChange={setAmount} placeholder="0" ariaLabel="Monto" autoFocus />
+        <div className="flex flex-col gap-1">
+          <CurrencyInput
+            variant="large"
+            value={amount}
+            onChange={setAmount}
+            placeholder="0"
+            ariaLabel="Monto"
+            autoFocus
+            allowNegative
+          />
+          <p className="text-center text-xs text-ink-muted">
+            Escribe un monto negativo para registrar un ingreso (ej. una transferencia que te hicieron)
+          </p>
+        </div>
 
         <div className="flex rounded-xl bg-cream-surface p-1">
           {(['personal', 'joint'] as const).map((t) => (

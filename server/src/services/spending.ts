@@ -21,10 +21,11 @@ export type SpendingEntry = {
  * aqui: una vez matcheen con una transaccion (Fase 3), el gasto se cuenta por la
  * transaccion, no por el registro rapido (evita doble conteo).
  *
- * Se niega el monto en vez de tomar su valor absoluto: para quick_entries (siempre negativos,
- * regla de Fase 2) da exactamente lo mismo que abs(), pero para transactions (Fase 3), que si
- * pueden traer signo positivo (abonos/intereses tipo personal), negar es lo correcto — un abono
- * resta del gastado en vez de sumar (docs/02-modelo-de-datos.md, calculo de "Gastado personal").
+ * Se niega el monto en vez de tomar su valor absoluto: tanto quick_entries (##67 -- pueden ser un
+ * ingreso puntual con signo positivo, ej. una transferencia que les hicieron) como transactions
+ * (Fase 3, abonos/intereses tipo personal) pueden traer signo positivo, y en ambos casos negar es
+ * lo correcto — un ingreso resta del gastado en vez de sumar (docs/02-modelo-de-datos.md, calculo
+ * de "Gastado personal").
  */
 function countableAmount(entry: SpendingEntry): Decimal {
   if (entry.status === 'matched') {
