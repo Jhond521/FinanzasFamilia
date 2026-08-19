@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { CurrencyInput } from './CurrencyInput';
@@ -14,6 +14,14 @@ import {
   type QuickEntryType,
 } from './lib/api';
 import { formatCOP, MESES } from './lib/money';
+import {
+  enqueuePendingQuickEntry,
+  listPendingQuickEntries,
+  removePendingQuickEntry,
+  setPendingQuickEntryError,
+  type PendingQuickEntry,
+} from './lib/offlineQueue';
+import { syncPendingQuickEntries } from './lib/offlineSync';
 
 type Props = {
   currentUser: CurrentUser;
@@ -59,6 +67,7 @@ export default function QuickEntry({ currentUser }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [pendingEntries, setPendingEntries] = useState<PendingQuickEntry[]>([]);
 
   const date = dateMode === 'today' ? todayStr : dateMode === 'yesterday' ? yesterdayStr : customDate;
 
@@ -90,16 +99,71 @@ export default function QuickEntry({ currentUser }: Props) {
     ]);
   }
 
+  const refreshPending = useCallback(async () => {
+    setPendingEntries(await listPendingQuickEntries());
+  }, []);
+
+  // Al montar y cada vez que vuelve la conexion, intenta vaciar la cola offline (##65).
+  useEffect(() => {
+    let cancelled = false;
+    async function trySync() {
+      const result = await syncPendingQuickEntries();
+      if (cancelled) return;
+      if (result.synced.length > 0) {
+        await invalidateAfterSave();
+      }
+      if (result.synced.length > 0 || result.failed.length > 0) {
+        await refreshPending();
+      }
+    }
+    refreshPending();
+    trySync();
+    window.addEventListener('online', trySync);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', trySync);
+    };
+  }, [refreshPending]);
+
+  async function retryPendingEntry(localId: string) {
+    await setPendingQuickEntryError(localId, null);
+    await refreshPending();
+    const result = await syncPendingQuickEntries();
+    if (result.synced.length > 0) {
+      await invalidateAfterSave();
+    }
+    await refreshPending();
+  }
+
+  async function discardPendingEntry(localId: string) {
+    await removePendingQuickEntry(localId);
+    await refreshPending();
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const payload = { amount, description, type, date, userId };
       if (editingId) {
         return updateQuickEntry(editingId, payload);
       }
-      return createQuickEntry(payload);
+      try {
+        return await createQuickEntry(payload);
+      } catch (err) {
+        // Sin red: fetch() rechaza con TypeError (no es un error del servidor). En vez de mostrar
+        // error, se encola localmente y se sincroniza solo cuando vuelva la conexion.
+        if (err instanceof TypeError) {
+          await enqueuePendingQuickEntry(payload);
+          return null;
+        }
+        throw err;
+      }
     },
-    onSuccess: async () => {
-      await invalidateAfterSave();
+    onSuccess: async (result) => {
+      if (result === null) {
+        await refreshPending();
+      } else {
+        await invalidateAfterSave();
+      }
       resetForm();
     },
     onError: (err: unknown) => {
@@ -275,6 +339,51 @@ export default function QuickEntry({ currentUser }: Props) {
           </button>
         </div>
       </form>
+
+      {pendingEntries.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
+            Pendientes de sincronizar
+          </h2>
+          <div className="flex flex-col divide-y divide-line rounded-xl border border-warning bg-warning-light">
+            {pendingEntries.map((entry) => {
+              const owner = users?.find((u) => u.id === entry.userId);
+              return (
+                <div key={entry.localId} className="flex flex-col gap-2 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-ink">{entry.description}</div>
+                      <div className="text-xs text-ink-muted">
+                        {formatEntryDate(entry.date)} · {TYPE_LABEL[entry.type]} · {owner?.name ?? '—'}
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>
+                  </div>
+                  {entry.error ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-danger">{entry.error}</span>
+                      <div className="flex gap-3 whitespace-nowrap text-xs font-semibold">
+                        <button type="button" onClick={() => retryPendingEntry(entry.localId)} className="text-brand">
+                          Reintentar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => discardPendingEntry(entry.localId)}
+                          className="text-danger"
+                        >
+                          Descartar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-semibold text-warning">Pendiente de sincronizar</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {currentMonth && recentEntries && recentEntries.length === 0 && (
         <p className="text-center text-sm text-ink-muted">Todavia no hay registros este mes.</p>
