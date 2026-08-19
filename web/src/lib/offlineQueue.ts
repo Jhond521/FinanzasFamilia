@@ -86,14 +86,32 @@ export async function removePendingQuickEntry(localId: string): Promise<void> {
   });
 }
 
+async function updateEntryByLocalId(
+  store: IDBObjectStore,
+  localId: string,
+  updater: (entry: PendingQuickEntry) => PendingQuickEntry,
+): Promise<void> {
+  const index = store.index(LOCAL_ID_INDEX);
+  const key = await promisify(index.getKey(localId));
+  if (key === undefined) return;
+  const entry = await promisify(index.get(localId) as IDBRequest<PendingQuickEntry | undefined>);
+  if (entry) {
+    await promisify(store.put(updater(entry), key));
+  }
+}
+
 export async function setPendingQuickEntryError(localId: string, error: string | null): Promise<void> {
-  await withStore('readwrite', async (store) => {
-    const index = store.index(LOCAL_ID_INDEX);
-    const key = await promisify(index.getKey(localId));
-    if (key === undefined) return;
-    const entry = await promisify(index.get(localId) as IDBRequest<PendingQuickEntry | undefined>);
-    if (entry) {
-      await promisify(store.put({ ...entry, error }, key));
-    }
-  });
+  await withStore('readwrite', (store) => updateEntryByLocalId(store, localId, (entry) => ({ ...entry, error })));
+}
+
+/** Edita un registro todavia sin sincronizar (##65 seguimiento: debe poder editarse/borrarse igual
+ * que uno ya persistido). Limpia el error si lo tenia: si el usuario corrigio los datos, el proximo
+ * intento de sincronizacion debe volver a intentarlo, no quedarse marcado con el error viejo. */
+export async function updatePendingQuickEntry(
+  localId: string,
+  input: { amount: string; description: string; type: QuickEntryType; date: string; userId: string },
+): Promise<void> {
+  await withStore('readwrite', (store) =>
+    updateEntryByLocalId(store, localId, (entry) => ({ ...entry, ...input, error: null })),
+  );
 }
