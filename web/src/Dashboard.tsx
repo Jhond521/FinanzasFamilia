@@ -385,6 +385,10 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                     // Semaforo tambien por persona (ticket #44): cuanto gasto cada uno contra su
                     // propia porcion del presupuesto de la bolsa, no solo el agregado.
                     const contributionStatus = c.spent !== undefined ? bucketStatus(c.amount, c.spent) : undefined;
+                    // Disponible por persona (##70): mismo dato que ya trae el agregado de la
+                    // bolsa (presupuesto - gastado), solo que a nivel individual.
+                    const contributionAvailable =
+                      c.spent !== undefined ? String(Number(c.amount) - Number(c.spent)) : undefined;
                     return (
                       <div key={c.userId} className="flex justify-between">
                         <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
@@ -395,6 +399,13 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                               className={`ml-2 text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
                             >
                               gastado {formatCOP(c.spent)}
+                            </span>
+                          )}
+                          {contributionAvailable !== undefined && (
+                            <span
+                              className={`ml-2 text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
+                            >
+                              disponible {formatCOP(contributionAvailable)}
                             </span>
                           )}
                         </span>
