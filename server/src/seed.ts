@@ -14,6 +14,16 @@ const SEED_BUCKETS = [
   { name: 'Gastos del Mes', percentage: '48.00', splitMode: 'proportional', kind: 'shared_expenses', active: true, sortOrder: 3 },
 ] as const;
 
+// Tipos de registro rapido configurables (##73). Preserva el comportamiento previo al ticket:
+// solo Personal/Conjunto activos. "Movimientos", "Ayuda Familia", etc. se agregan desde
+// Configuracion cuando se necesiten -- no se asume que el usuario los quiere activos ya.
+// Conjunto va primero (##75): sin deep link, `/r` preselecciona el primer tipo activo por
+// sort_order -- la mayoria de los registros sin deep link son gastos conjuntos.
+const SEED_QUICK_ENTRY_TYPES = [
+  { name: 'Conjunto', kind: 'joint', slug: 'conjunto', sortOrder: 0 },
+  { name: 'Personal', kind: 'personal', slug: 'personal', sortOrder: 1 },
+] as const;
+
 // Categorias de gasto, configurables pero fijas por ahora (docs/01-prd.md RF5).
 const SEED_CATEGORIES = [
   'Hogar',
@@ -83,6 +93,15 @@ async function main(): Promise<void> {
     }
   }
   console.log('Seed completado: rubros (Ahorros Conjuntos, Dinero Personal, Ayuda Familia, Gastos del Mes)');
+
+  for (const type of SEED_QUICK_ENTRY_TYPES) {
+    await prisma.quickEntryTypeOption.upsert({
+      where: { slug: type.slug },
+      update: { name: type.name, kind: type.kind, sortOrder: type.sortOrder },
+      create: { name: type.name, kind: type.kind, slug: type.slug, sortOrder: type.sortOrder },
+    });
+  }
+  console.log('Seed completado: tipos de registro rapido (Personal, Conjunto)');
 
   const categoryIds = new Map<string, string>();
   for (const [index, name] of SEED_CATEGORIES.entries()) {

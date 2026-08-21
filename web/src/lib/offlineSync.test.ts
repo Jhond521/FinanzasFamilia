@@ -6,7 +6,22 @@ import { syncPendingQuickEntries } from './offlineSync';
 
 vi.mock('./api', () => ({ createQuickEntry: vi.fn() }));
 
-const SAMPLE = { amount: '-15000.00', description: 'Almuerzo', type: 'personal' as const, date: '2026-08-19', userId: 'user-1' };
+const SAMPLE = {
+  amount: '-15000.00',
+  description: 'Almuerzo',
+  typeOptionId: 'type-personal',
+  date: '2026-08-19',
+  userId: 'user-1',
+};
+
+const SAMPLE_TYPE_OPTION = {
+  id: 'type-personal',
+  name: 'Personal',
+  kind: 'personal' as const,
+  slug: 'personal',
+  active: true,
+  sortOrder: 0,
+};
 
 beforeEach(async () => {
   vi.mocked(createQuickEntry).mockReset();
@@ -24,7 +39,8 @@ describe('syncPendingQuickEntries', () => {
       createdBy: 'user-1',
       amount: SAMPLE.amount,
       description: SAMPLE.description,
-      type: SAMPLE.type,
+      typeOptionId: SAMPLE.typeOptionId,
+      typeOption: SAMPLE_TYPE_OPTION,
       date: SAMPLE.date,
       status: 'pending',
     });
@@ -38,7 +54,7 @@ describe('syncPendingQuickEntries', () => {
     expect(createQuickEntry).toHaveBeenCalledWith({
       amount: SAMPLE.amount,
       description: SAMPLE.description,
-      type: SAMPLE.type,
+      typeOptionId: SAMPLE.typeOptionId,
       date: SAMPLE.date,
       userId: SAMPLE.userId,
     });
@@ -88,7 +104,8 @@ describe('syncPendingQuickEntries', () => {
               createdBy: SAMPLE.userId,
               amount: SAMPLE.amount,
               description: SAMPLE.description,
-              type: SAMPLE.type,
+              typeOptionId: SAMPLE.typeOptionId,
+              typeOption: SAMPLE_TYPE_OPTION,
               date: SAMPLE.date,
               status: 'pending',
             });

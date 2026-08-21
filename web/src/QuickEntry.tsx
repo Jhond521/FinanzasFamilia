@@ -7,11 +7,11 @@ import {
   deleteQuickEntry,
   fetchMonths,
   fetchQuickEntries,
+  fetchQuickEntryTypes,
   fetchUsers,
   updateQuickEntry,
   type CurrentUser,
   type QuickEntry as QuickEntryRecord,
-  type QuickEntryType,
 } from './lib/api';
 import { formatCOP, MESES } from './lib/money';
 import {
@@ -27,9 +27,6 @@ import { syncPendingQuickEntries } from './lib/offlineSync';
 type Props = {
   currentUser: CurrentUser;
 };
-
-const TIPO_PARAM_TO_TYPE: Record<string, QuickEntryType> = { conjunto: 'joint', personal: 'personal' };
-const TYPE_LABEL: Record<QuickEntryType, string> = { personal: 'Personal', joint: 'Conjunto' };
 
 function toDateOnlyLocal(date: Date): string {
   const y = date.getFullYear();
@@ -53,7 +50,6 @@ export default function QuickEntry({ currentUser }: Props) {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tipoParam = searchParams.get('tipo');
-  const preselectedType = tipoParam ? TIPO_PARAM_TO_TYPE[tipoParam] : undefined;
 
   const today = useMemo(() => new Date(), []);
   const todayStr = toDateOnlyLocal(today);
@@ -61,7 +57,7 @@ export default function QuickEntry({ currentUser }: Props) {
 
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [type, setType] = useState<QuickEntryType>(preselectedType ?? 'personal');
+  const [typeOptionId, setTypeOptionId] = useState('');
   const [dateMode, setDateMode] = useState<'today' | 'yesterday' | 'custom'>('today');
   const [customDate, setCustomDate] = useState(todayStr);
   const [userId, setUserId] = useState(currentUser.id);
@@ -76,7 +72,9 @@ export default function QuickEntry({ currentUser }: Props) {
 
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
   const { data: months } = useQuery({ queryKey: ['months'], queryFn: fetchMonths });
+  const { data: quickEntryTypes } = useQuery({ queryKey: ['quickEntryTypes'], queryFn: fetchQuickEntryTypes });
   const currentMonth = months?.find((m) => m.status === 'open');
+  const activeTypes = useMemo(() => (quickEntryTypes ?? []).filter((t) => t.active), [quickEntryTypes]);
 
   const { data: recentEntries } = useQuery({
     queryKey: ['quickEntries', currentMonth?.id],
@@ -84,10 +82,27 @@ export default function QuickEntry({ currentUser }: Props) {
     enabled: Boolean(currentMonth),
   });
 
+  // Deep link (`/r?tipo=<slug>`, PRD RF-acceso-rapido) o, si no aplica, el primer tipo activo
+  // configurado (##73) — el slug es estable aunque el usuario renombre el tipo despues.
+  const defaultTypeOptionId = useCallback((): string => {
+    const preselected = tipoParam ? activeTypes.find((t) => t.slug === tipoParam) : undefined;
+    return (preselected ?? activeTypes[0])?.id ?? '';
+  }, [activeTypes, tipoParam]);
+
+  useEffect(() => {
+    if (!typeOptionId && activeTypes.length > 0) {
+      setTypeOptionId(defaultTypeOptionId());
+    }
+  }, [activeTypes, typeOptionId, defaultTypeOptionId]);
+
+  function typeName(id: string): string {
+    return quickEntryTypes?.find((t) => t.id === id)?.name ?? '—';
+  }
+
   function resetForm() {
     setAmount('');
     setDescription('');
-    setType(preselectedType ?? 'personal');
+    setTypeOptionId(defaultTypeOptionId());
     setDateMode('today');
     setCustomDate(todayStr);
     setUserId(currentUser.id);
@@ -150,7 +165,7 @@ export default function QuickEntry({ currentUser }: Props) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = { amount, description, type, date, userId };
+      const payload = { amount, description, typeOptionId, date, userId };
       if (editingPendingId) {
         // Editar un registro todavia sin sincronizar es puramente local: no toca la red.
         await updatePendingQuickEntry(editingPendingId, payload);
@@ -200,7 +215,7 @@ export default function QuickEntry({ currentUser }: Props) {
     setEditingPendingId(null);
     setAmount(entry.amount);
     setDescription(entry.description);
-    setType(entry.type);
+    setTypeOptionId(entry.typeOptionId);
     setUserId(entry.userId);
     if (entry.date === todayStr) {
       setDateMode('today');
@@ -218,7 +233,7 @@ export default function QuickEntry({ currentUser }: Props) {
     setEditingId(null);
     setAmount(entry.amount);
     setDescription(entry.description);
-    setType(entry.type);
+    setTypeOptionId(entry.typeOptionId);
     setUserId(entry.userId);
     if (entry.date === todayStr) {
       setDateMode('today');
@@ -240,6 +255,10 @@ export default function QuickEntry({ currentUser }: Props) {
     }
     if (!description.trim()) {
       setError('La descripcion es obligatoria');
+      return;
+    }
+    if (!typeOptionId) {
+      setError('Selecciona un tipo de registro');
       return;
     }
     saveMutation.mutate();
@@ -288,20 +307,26 @@ export default function QuickEntry({ currentUser }: Props) {
           </p>
         </div>
 
-        <div className="flex rounded-xl bg-cream-surface p-1">
-          {(['personal', 'joint'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setType(t)}
-              className={`flex min-h-11 flex-1 items-center justify-center rounded-lg py-2 text-sm font-semibold transition ${
-                type === t ? 'bg-white text-ink shadow-sm' : 'text-ink-muted'
-              }`}
-            >
-              {TYPE_LABEL[t]}
-            </button>
-          ))}
-        </div>
+        {activeTypes.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {activeTypes.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTypeOptionId(t.id)}
+                className={`flex min-h-11 flex-1 basis-[30%] items-center justify-center rounded-lg px-2 py-2 text-sm font-semibold transition ${
+                  typeOptionId === t.id ? 'border border-brand bg-brand-light text-brand' : 'border border-line text-ink-soft'
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-lg bg-warning-light p-3 text-sm text-warning">
+            No hay tipos de registro configurados — agrega al menos uno desde Configuración.
+          </p>
+        )}
 
         {/* text-base (16px) en los inputs de esta pantalla: por debajo de 16px, iOS Safari hace
             zoom automatico de toda la pagina al enfocar el campo. */}
@@ -389,7 +414,7 @@ export default function QuickEntry({ currentUser }: Props) {
           )}
           <button
             type="submit"
-            disabled={saveMutation.isPending || !currentMonth}
+            disabled={saveMutation.isPending || !currentMonth || !typeOptionId}
             className="flex-1 rounded-xl bg-brand py-3 text-base font-extrabold text-white transition hover:bg-brand-hover disabled:opacity-50"
           >
             {saveMutation.isPending ? 'Guardando…' : 'Guardar'}
@@ -411,7 +436,7 @@ export default function QuickEntry({ currentUser }: Props) {
                     <button type="button" onClick={() => startEditPending(entry)} className="flex-1 text-left">
                       <div className="text-sm font-semibold text-ink">{entry.description}</div>
                       <div className="text-xs text-ink-muted">
-                        {formatEntryDate(entry.date)} · {TYPE_LABEL[entry.type]} · {owner?.name ?? '—'}
+                        {formatEntryDate(entry.date)} · {typeName(entry.typeOptionId)} · {owner?.name ?? '—'}
                       </div>
                     </button>
                     <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>
@@ -472,7 +497,7 @@ export default function QuickEntry({ currentUser }: Props) {
                   <button type="button" onClick={() => startEdit(entry)} className="flex-1 text-left">
                     <div className="text-sm font-semibold text-ink">{entry.description}</div>
                     <div className="text-xs text-ink-muted">
-                      {formatEntryDate(entry.date)} · {TYPE_LABEL[entry.type]} · {owner?.name ?? '—'}
+                      {formatEntryDate(entry.date)} · {entry.typeOption.name} · {owner?.name ?? '—'}
                     </div>
                   </button>
                   <span className="text-sm font-bold text-ink">{formatCOP(entry.amount)}</span>

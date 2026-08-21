@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Prisma, type QuickEntry } from '@prisma/client';
+import { Prisma, type QuickEntry, type QuickEntryTypeOption } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
@@ -8,7 +8,6 @@ export const quickEntriesRouter = Router();
 
 const { Decimal } = Prisma;
 
-const QUICK_ENTRY_TYPES = ['personal', 'joint'] as const;
 const QUICK_ENTRY_STATUSES = ['pending', 'matched', 'no_match_expected'] as const;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,7 +16,7 @@ const dateSchema = z.string().regex(DATE_RE, 'Fecha debe ser YYYY-MM-DD');
 const createQuickEntrySchema = z.object({
   amount: z.union([z.string(), z.number()]),
   description: z.string().trim().min(1),
-  type: z.enum(QUICK_ENTRY_TYPES),
+  typeOptionId: z.string().uuid(),
   date: dateSchema.optional(),
   userId: z.string().uuid().optional(),
 });
@@ -30,7 +29,7 @@ const MANUALLY_SETTABLE_STATUSES = ['pending', 'no_match_expected'] as const;
 const updateQuickEntrySchema = z.object({
   amount: z.union([z.string(), z.number()]).optional(),
   description: z.string().trim().min(1).optional(),
-  type: z.enum(QUICK_ENTRY_TYPES).optional(),
+  typeOptionId: z.string().uuid().optional(),
   date: dateSchema.optional(),
   userId: z.string().uuid().optional(),
   status: z.enum(MANUALLY_SETTABLE_STATUSES).optional(),
@@ -50,7 +49,7 @@ function todayDateOnly(): string {
 }
 
 /** El campo `date` es DateTime en Prisma (medianoche UTC); la API expone solo YYYY-MM-DD (docs/03-api.md). */
-function serializeQuickEntry(entry: QuickEntry) {
+function serializeQuickEntry(entry: QuickEntry & { typeOption: QuickEntryTypeOption }) {
   return { ...entry, date: toDateOnly(entry.date) };
 }
 
@@ -59,6 +58,13 @@ async function findMonthForDate(date: string) {
   const year = Number(date.slice(0, 4));
   const month = Number(date.slice(5, 7));
   return prisma.month.findUnique({ where: { year_month: { year, month } } });
+}
+
+/** Solo se puede registrar/editar con un tipo activo (##73) -- los inactivos siguen existiendo
+ * para no romper el historico, pero desaparecen del selector y no se pueden volver a elegir. */
+async function findActiveTypeOption(id: string): Promise<QuickEntryTypeOption | null> {
+  const typeOption = await prisma.quickEntryTypeOption.findUnique({ where: { id } });
+  return typeOption?.active ? typeOption : null;
 }
 
 quickEntriesRouter.post('/', async (req, res) => {
@@ -80,6 +86,12 @@ quickEntriesRouter.post('/', async (req, res) => {
     return;
   }
 
+  const typeOption = await findActiveTypeOption(data.typeOptionId);
+  if (!typeOption) {
+    badRequest(res, 'invalid_type', 'Tipo de registro invalido o inactivo');
+    return;
+  }
+
   // Se niega el signo escrito (no abs()): un monto positivo (gasto normal) queda negativo, igual
   // que el extracto bancario; uno negativo (##67 -- un ingreso puntual, ej. una transferencia que
   // les hicieron) queda positivo, igual que un ingreso real en el extracto.
@@ -92,9 +104,10 @@ quickEntriesRouter.post('/', async (req, res) => {
       createdBy: req.user!.id,
       amount,
       description: data.description,
-      type: data.type,
+      typeOptionId: typeOption.id,
       date: parseDateOnly(date),
     },
+    include: { typeOption: true },
   });
   res.status(201).json({ quickEntry: serializeQuickEntry(quickEntry) });
 });
@@ -115,6 +128,7 @@ quickEntriesRouter.get('/', async (req, res) => {
   const quickEntries = await prisma.quickEntry.findMany({
     where: { monthId, status: status as (typeof QUICK_ENTRY_STATUSES)[number] | undefined },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+    include: { typeOption: true },
   });
   res.json({ quickEntries: quickEntries.map(serializeQuickEntry) });
 });
@@ -144,6 +158,16 @@ quickEntriesRouter.put('/:id', async (req, res) => {
     monthId = month.id;
   }
 
+  let typeOptionId = existing.typeOptionId;
+  if (data.typeOptionId) {
+    const typeOption = await findActiveTypeOption(data.typeOptionId);
+    if (!typeOption) {
+      badRequest(res, 'invalid_type', 'Tipo de registro invalido o inactivo');
+      return;
+    }
+    typeOptionId = typeOption.id;
+  }
+
   const quickEntry = await prisma.quickEntry.update({
     where: { id: existing.id },
     data: {
@@ -151,10 +175,11 @@ quickEntriesRouter.put('/:id', async (req, res) => {
       userId: data.userId ?? existing.userId,
       amount: data.amount !== undefined ? new Decimal(data.amount).negated() : existing.amount,
       description: data.description ?? existing.description,
-      type: data.type ?? existing.type,
+      typeOptionId,
       date: data.date ? parseDateOnly(data.date) : existing.date,
       status: data.status ?? existing.status,
     },
+    include: { typeOption: true },
   });
   res.json({ quickEntry: serializeQuickEntry(quickEntry) });
 });

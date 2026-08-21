@@ -59,6 +59,15 @@ enum QuickEntryStatus {
   no_match_expected
 }
 
+// Semantica de calculo de un QuickEntryTypeOption (##73) -- mismo rol que BucketKind para
+// Bucket: el nombre lo edita el usuario libremente, pero spending.ts solo entiende estos tres
+// valores fijos para saber si un registro suma a "conjunto", "personal" o no entra a ningun total.
+enum QuickEntryKind {
+  personal
+  joint
+  movement
+}
+
 enum TransactionType {
   personal
   joint
@@ -201,6 +210,27 @@ model MonthBucket {
   @@map("month_buckets")
 }
 
+// Tipos configurables de registro rapido (##73). Reemplaza el enum fijo QuickEntryType para
+// QuickEntry (CardItem.type sigue usando el enum viejo aparte, sin relacion con esta tabla --
+// las tarjetas quedan fuera del alcance de ##73). Mismo patron que Bucket/BucketKind: `name` lo
+// edita el usuario libremente desde Configuracion, `kind` es la semantica fija que usan los
+// calculos. `slug` es el identificador estable para los deep links (`/r?tipo=conjunto`), que no
+// se ve afectado si el usuario renombra el tipo.
+model QuickEntryTypeOption {
+  id        String         @id @default(uuid())
+  name      String
+  kind      QuickEntryKind
+  slug      String         @unique
+  active    Boolean        @default(true)
+  sortOrder Int            @default(0) @map("sort_order")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  quickEntries QuickEntry[]
+
+  @@map("quick_entry_types")
+}
+
 // Registro rapido de gasto (reemplaza WhatsApp, Fase 2). userId = de quien es el
 // gasto (para el reparto por bolsa); createdBy = quien lo registro (puede ser el otro).
 // matchedTransactionId (FK a una futura tabla transactions) se agrega en Fase 3 -
@@ -212,17 +242,22 @@ model QuickEntry {
   createdBy            String           @map("created_by")
   amount               Decimal          @db.Decimal(14, 2)
   description          String
-  type                 QuickEntryType
+  // DEPRECATED (##73): reemplazado por typeOption/typeOptionId. Se deja nullable y sin escribir
+  // desde la app (en vez de un DROP, que requiere autorizacion explicita sobre datos ya en
+  // produccion) para no perder el historico; una migracion de limpieza futura puede retirarlo.
+  type                 QuickEntryType?
+  typeOptionId         String           @map("type_option_id")
   date                 DateTime         @db.Date
   status               QuickEntryStatus @default(pending)
   matchedTransactionId String?          @unique @map("matched_transaction_id")
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
-  month              Month        @relation(fields: [monthId], references: [id], onDelete: Cascade)
-  user               User         @relation("QuickEntryOwner", fields: [userId], references: [id])
-  creator            User         @relation("QuickEntryCreator", fields: [createdBy], references: [id])
-  matchedTransaction Transaction? @relation("QuickEntryMatch", fields: [matchedTransactionId], references: [id])
+  month              Month                @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  user               User                 @relation("QuickEntryOwner", fields: [userId], references: [id])
+  creator            User                 @relation("QuickEntryCreator", fields: [createdBy], references: [id])
+  matchedTransaction Transaction?         @relation("QuickEntryMatch", fields: [matchedTransactionId], references: [id])
+  typeOption         QuickEntryTypeOption @relation(fields: [typeOptionId], references: [id])
 
   @@index([monthId, status])
   @@map("quick_entries")

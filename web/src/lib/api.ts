@@ -378,8 +378,46 @@ export async function downloadMonthExport(monthId: string, filename: string): Pr
   URL.revokeObjectURL(url);
 }
 
-export type QuickEntryType = 'personal' | 'joint';
 export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
+
+// ---- Tipos de registro rapido (configurables, ##73) ----
+
+export type QuickEntryKind = 'personal' | 'joint' | 'movement';
+
+export type QuickEntryTypeOption = {
+  id: string;
+  name: string;
+  kind: QuickEntryKind;
+  slug: string;
+  active: boolean;
+  sortOrder: number;
+};
+
+export async function fetchQuickEntryTypes(): Promise<QuickEntryTypeOption[]> {
+  const body = await apiFetch<{ quickEntryTypes: QuickEntryTypeOption[] }>('/quick-entry-types');
+  return body.quickEntryTypes;
+}
+
+export type QuickEntryTypeInput = { name: string; kind: QuickEntryKind; active?: boolean };
+
+export async function createQuickEntryType(input: QuickEntryTypeInput): Promise<QuickEntryTypeOption> {
+  const body = await apiFetch<{ quickEntryType: QuickEntryTypeOption }>('/quick-entry-types', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntryType;
+}
+
+export async function updateQuickEntryType(
+  id: string,
+  input: Partial<QuickEntryTypeInput>,
+): Promise<QuickEntryTypeOption> {
+  const body = await apiFetch<{ quickEntryType: QuickEntryTypeOption }>(`/quick-entry-types/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.quickEntryType;
+}
 
 export type QuickEntry = {
   id: string;
@@ -388,7 +426,8 @@ export type QuickEntry = {
   createdBy: string;
   amount: string;
   description: string;
-  type: QuickEntryType;
+  typeOptionId: string;
+  typeOption: QuickEntryTypeOption;
   date: string;
   status: QuickEntryStatus;
 };
@@ -402,7 +441,7 @@ export async function fetchQuickEntries(monthId: string, status?: QuickEntryStat
 export async function createQuickEntry(input: {
   amount: string;
   description: string;
-  type: QuickEntryType;
+  typeOptionId: string;
   date?: string;
   userId?: string;
 }): Promise<QuickEntry> {
@@ -415,7 +454,7 @@ export async function createQuickEntry(input: {
 
 export async function updateQuickEntry(
   id: string,
-  input: Partial<{ amount: string; description: string; type: QuickEntryType; date: string; userId: string }>,
+  input: Partial<{ amount: string; description: string; typeOptionId: string; date: string; userId: string }>,
 ): Promise<QuickEntry> {
   const body = await apiFetch<{ quickEntry: QuickEntry }>(`/quick-entries/${id}`, {
     method: 'PUT',
