@@ -17,9 +17,11 @@ const SEED_BUCKETS = [
 // Tipos de registro rapido configurables (##73). Preserva el comportamiento previo al ticket:
 // solo Personal/Conjunto activos. "Movimientos", "Ayuda Familia", etc. se agregan desde
 // Configuracion cuando se necesiten -- no se asume que el usuario los quiere activos ya.
+// Conjunto va primero (##75): sin deep link, `/r` preselecciona el primer tipo activo por
+// sort_order -- la mayoria de los registros sin deep link son gastos conjuntos.
 const SEED_QUICK_ENTRY_TYPES = [
-  { name: 'Personal', kind: 'personal', slug: 'personal', sortOrder: 0 },
-  { name: 'Conjunto', kind: 'joint', slug: 'conjunto', sortOrder: 1 },
+  { name: 'Conjunto', kind: 'joint', slug: 'conjunto', sortOrder: 0 },
+  { name: 'Personal', kind: 'personal', slug: 'personal', sortOrder: 1 },
 ] as const;
 
 // Categorias de gasto, configurables pero fijas por ahora (docs/01-prd.md RF5).
