@@ -171,7 +171,10 @@ transactionsRouter.post('/:id/match', async (req, res) => {
     badRequest(res, 'invalid_body', parsed.error.message);
     return;
   }
-  const quickEntry = await prisma.quickEntry.findUnique({ where: { id: parsed.data.quickEntryId } });
+  const quickEntry = await prisma.quickEntry.findUnique({
+    where: { id: parsed.data.quickEntryId },
+    include: { typeOption: true },
+  });
   if (!quickEntry || quickEntry.status !== 'pending') {
     badRequest(res, 'invalid_quick_entry', 'El registro rapido no existe o ya no esta pendiente');
     return;
@@ -189,7 +192,12 @@ transactionsRouter.post('/:id/match', async (req, res) => {
   const [updatedTransaction] = await prisma.$transaction([
     prisma.transaction.update({
       where: { id: transaction.id },
-      data: { type: quickEntry.type, detail: quickEntry.description, classifiedBy: 'match', needsReview: false },
+      data: {
+        type: quickEntry.typeOption.kind,
+        detail: quickEntry.description,
+        classifiedBy: 'match',
+        needsReview: false,
+      },
     }),
     prisma.quickEntry.update({
       where: { id: quickEntry.id },

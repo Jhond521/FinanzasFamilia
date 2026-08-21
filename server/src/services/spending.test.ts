@@ -4,14 +4,14 @@ import { jointSpent, jointSpentByUser, personalSpent, type SpendingEntry } from 
 const joint = (amount: string, status: SpendingEntry['status'] = 'pending', userId = 'john'): SpendingEntry => ({
   userId,
   amount,
-  type: 'joint',
+  kind: 'joint',
   status,
 });
 
 const personal = (userId: string, amount: string, status: SpendingEntry['status'] = 'pending'): SpendingEntry => ({
   userId,
   amount,
-  type: 'personal',
+  kind: 'personal',
   status,
 });
 
@@ -64,8 +64,14 @@ describe('personalSpent', () => {
   });
 
   it('acepta entradas sin status (transactions de Fase 3), siempre cuentan', () => {
-    const entry: SpendingEntry = { userId: 'john', amount: '-100', type: 'personal' };
+    const entry: SpendingEntry = { userId: 'john', amount: '-100', kind: 'personal' };
     expect(personalSpent([entry], 'john').toString()).toBe('100');
+  });
+
+  it('un registro tipo movement no cuenta ni como personal ni como conjunto (##73)', () => {
+    const movement: SpendingEntry = { userId: 'john', amount: '-500', kind: 'movement' };
+    expect(personalSpent([movement], 'john').toString()).toBe('0');
+    expect(jointSpent([movement]).toString()).toBe('0');
   });
 });
 

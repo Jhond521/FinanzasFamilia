@@ -4,13 +4,16 @@ const { Decimal } = Prisma;
 type Decimal = InstanceType<typeof Prisma.Decimal>;
 type DecimalInput = Decimal | string | number;
 
-export type QuickEntryType = 'personal' | 'joint';
+export type SpendingKind = 'personal' | 'joint' | 'movement';
 export type QuickEntryStatus = 'pending' | 'matched' | 'no_match_expected';
 
 export type SpendingEntry = {
   userId: string;
   amount: DecimalInput; // se guarda negativo si es gasto, como el extracto
-  type: QuickEntryType;
+  // Para quick_entries (##73) es el `kind` de su QuickEntryTypeOption, no el nombre libre que
+  // configuro el usuario; para transactions (Fase 3) es directamente su `type`. 'movement' no
+  // matchea ningun filtro de abajo, por eso queda fuera de todos los totales sin caso especial.
+  kind: SpendingKind;
   // Las transactions (Fase 3) no tienen este campo — solo los quick_entries lo usan; una entrada
   // sin status siempre cuenta (una transaction ya es la fuente de verdad, no algo "pendiente").
   status?: QuickEntryStatus;
@@ -37,14 +40,14 @@ function countableAmount(entry: SpendingEntry): Decimal {
 /** Gastado conjunto: suma de todos los registros rapidos tipo 'joint' del mes. */
 export function jointSpent(entries: SpendingEntry[]): Decimal {
   return entries
-    .filter((entry) => entry.type === 'joint')
+    .filter((entry) => entry.kind === 'joint')
     .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
 }
 
 /** Gastado personal de una persona: suma de sus registros rapidos tipo 'personal'. */
 export function personalSpent(entries: SpendingEntry[], userId: string): Decimal {
   return entries
-    .filter((entry) => entry.type === 'personal' && entry.userId === userId)
+    .filter((entry) => entry.kind === 'personal' && entry.userId === userId)
     .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
 }
 
@@ -56,6 +59,6 @@ export function personalSpent(entries: SpendingEntry[], userId: string): Decimal
  */
 export function jointSpentByUser(entries: SpendingEntry[], userId: string): Decimal {
   return entries
-    .filter((entry) => entry.type === 'joint' && entry.userId === userId)
+    .filter((entry) => entry.kind === 'joint' && entry.userId === userId)
     .reduce((sum, entry) => sum.plus(countableAmount(entry)), new Decimal(0));
 }

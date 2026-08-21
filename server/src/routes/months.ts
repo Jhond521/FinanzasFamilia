@@ -122,7 +122,7 @@ async function buildLiveSummary(month: Month) {
   const [incomes, monthBuckets, quickEntries, transactions] = await Promise.all([
     prisma.income.findMany({ where: { monthId: month.id } }),
     prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
-    prisma.quickEntry.findMany({ where: { monthId: month.id } }),
+    prisma.quickEntry.findMany({ where: { monthId: month.id }, include: { typeOption: true } }),
     prisma.transaction.findMany({ where: { monthId: month.id, type: { in: ['personal', 'joint'] } } }),
   ]);
 
@@ -134,13 +134,13 @@ async function buildLiveSummary(month: Month) {
     ...quickEntries.map((entry) => ({
       userId: entry.userId,
       amount: entry.amount,
-      type: entry.type,
+      kind: entry.typeOption.kind,
       status: entry.status,
     })),
     ...transactions.map((tx) => ({
       userId: tx.ownerUserId,
       amount: tx.amount,
-      type: tx.type as 'personal' | 'joint',
+      kind: tx.type as 'personal' | 'joint',
     })),
   ];
 

@@ -113,7 +113,10 @@ importsRouter.post('/', upload.single('file'), async (req, res) => {
   const { toImport, toSkip } = planImport(rowsWithKey, existingCounts);
 
   const [pendingQuickEntries, activeRules] = await Promise.all([
-    prisma.quickEntry.findMany({ where: { monthId, userId: ownerUserId, status: 'pending' } }),
+    prisma.quickEntry.findMany({
+      where: { monthId, userId: ownerUserId, status: 'pending' },
+      include: { typeOption: true },
+    }),
     prisma.rule.findMany({ where: { active: true } }),
   ]);
   const ruleCandidates = activeRules.map(toRuleCandidate);
@@ -154,7 +157,7 @@ importsRouter.post('/', upload.single('file'), async (req, res) => {
             bankDescription: row.bankDescription,
             bankReference: row.bankReference,
             amount: new Decimal(row.amount),
-            type: matchedEntry.type,
+            type: matchedEntry.typeOption.kind,
             detail: matchedEntry.description,
             classifiedBy: 'match',
             dedupeKey: row.dedupeKey,
