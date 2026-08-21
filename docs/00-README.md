@@ -7,6 +7,7 @@ Documentos para construir la app con Claude Code. Copiar esta carpeta como `docs
 3. `03-api.md` — endpoints REST y brief de pantallas para Claude Design
 4. `04-arquitectura-y-despliegue.md` — monolito Node+React, Docker, Railway (dev/prod)
 5. `05-plan-de-construccion.md` — fases para Claude Code y CLAUDE.md sugerido
+6. `06-documentacion-funcional.md` — qué hace la app hoy, pantalla por pantalla (post-MVP, se actualiza a medida que se cierran tickets)
 
 Trazabilidad casos de uso → spec:
 
