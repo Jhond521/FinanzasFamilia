@@ -38,7 +38,7 @@ async function runSync(): Promise<SyncResult> {
       await createQuickEntry({
         amount: entry.amount,
         description: entry.description,
-        type: entry.type,
+        typeOptionId: entry.typeOptionId,
         date: entry.date,
         userId: entry.userId,
       });

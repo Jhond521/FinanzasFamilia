@@ -2,17 +2,23 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createBucket,
+  createQuickEntryType,
   createRule,
   deleteRule,
   fetchAppSettings,
   fetchBuckets,
   fetchCategories,
+  fetchQuickEntryTypes,
   fetchRules,
   updateAppSettings,
   updateBucket,
+  updateQuickEntryType,
   updateRule,
   type Bucket,
   type BucketKind,
+  type QuickEntryKind,
+  type QuickEntryTypeInput,
+  type QuickEntryTypeOption,
   type Rule,
   type RuleMode,
   type RuleSetType,
@@ -32,12 +38,21 @@ const BUCKET_KIND_LABEL: Record<BucketKind, string> = {
 };
 const SPLIT_MODE_LABEL: Record<SplitMode, string> = { proportional: 'Proporcional al ingreso', half: 'Mitad y mitad' };
 
+const QUICK_ENTRY_KIND_LABEL: Record<QuickEntryKind, string> = {
+  personal: 'Personal',
+  joint: 'Conjunto',
+  movement: 'Movimiento (no entra en los totales)',
+};
+
 type DraftRule = { pattern: string; setType: RuleSetType; categoryId: string; mode: RuleMode; setDetail: string };
 
 const EMPTY_DRAFT: DraftRule = { pattern: '', setType: 'joint', categoryId: '', mode: 'auto', setDetail: '' };
 
 type DraftBucket = { name: string; percentage: string; splitMode: SplitMode; kind: BucketKind };
 const EMPTY_BUCKET_DRAFT: DraftBucket = { name: '', percentage: '', splitMode: 'proportional', kind: 'other' };
+
+type DraftQuickEntryType = { name: string; kind: QuickEntryKind };
+const EMPTY_QUICK_ENTRY_TYPE_DRAFT: DraftQuickEntryType = { name: '', kind: 'personal' };
 
 export default function ConfigurationScreen() {
   const queryClient = useQueryClient();
@@ -92,6 +107,8 @@ export default function ConfigurationScreen() {
         <GeneralSettingsSection />
 
         <BucketsSection />
+
+        <QuickEntryTypesSection />
 
         <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
@@ -401,6 +418,117 @@ function BucketRow({ bucket, onUpdate }: { bucket: Bucket; onUpdate: (input: Par
           {bucket.active ? 'Desactivar' : 'Activar'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Tipos configurables de registro rapido (##73): reemplazan el toggle fijo Personal/Conjunto que
+// tenia `/r` — los tipos activos aparecen ahi como opciones, en el orden de creacion.
+function QuickEntryTypesSection() {
+  const queryClient = useQueryClient();
+  const { data: quickEntryTypes } = useQuery({ queryKey: ['quickEntryTypes'], queryFn: fetchQuickEntryTypes });
+
+  const [showForm, setShowForm] = useState(false);
+  const [draft, setDraft] = useState<DraftQuickEntryType>(EMPTY_QUICK_ENTRY_TYPE_DRAFT);
+
+  async function invalidate() {
+    await queryClient.invalidateQueries({ queryKey: ['quickEntryTypes'] });
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => createQuickEntryType(draft),
+    onSuccess: async () => {
+      await invalidate();
+      setDraft(EMPTY_QUICK_ENTRY_TYPE_DRAFT);
+      setShowForm(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Partial<QuickEntryTypeInput> }) => updateQuickEntryType(id, input),
+    onSuccess: invalidate,
+  });
+
+  return (
+    <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
+      <div className="mb-1 flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-ink">Tipos de registro rápido</h2>
+          <p className="text-xs text-ink-muted">Los tipos activos aparecen como opciones en el registro rápido (/r)</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowForm((v) => !v)}
+          className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand-hover"
+        >
+          + Tipo
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="mb-4 mt-3 grid grid-cols-2 gap-3 rounded-xl border border-line p-4 sm:grid-cols-3">
+          <input
+            type="text"
+            placeholder="Nombre (ej. Ayuda Familia)"
+            value={draft.name}
+            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+            className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
+          />
+          <select
+            value={draft.kind}
+            onChange={(e) => setDraft({ ...draft, kind: e.target.value as QuickEntryKind })}
+            className="rounded-lg border border-line px-3 py-2 text-sm"
+          >
+            {Object.entries(QUICK_ENTRY_KIND_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!draft.name.trim() || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+            className="col-span-2 rounded-lg bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50 sm:col-span-1"
+          >
+            Guardar
+          </button>
+          {createMutation.isError && (
+            <p className="col-span-2 text-xs text-danger sm:col-span-3">
+              {createMutation.error instanceof Error ? createMutation.error.message : 'No se pudo crear el tipo'}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-col">
+        {quickEntryTypes?.map((type) => (
+          <QuickEntryTypeRow
+            key={type.id}
+            type={type}
+            onToggleActive={() => updateMutation.mutate({ id: type.id, input: { active: !type.active } })}
+          />
+        ))}
+      </div>
+      {updateMutation.isError && (
+        <p className="mt-2 text-xs text-danger">
+          {updateMutation.error instanceof Error ? updateMutation.error.message : 'No se pudo actualizar el tipo'}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function QuickEntryTypeRow({ type, onToggleActive }: { type: QuickEntryTypeOption; onToggleActive: () => void }) {
+  return (
+    <div className={`flex items-center justify-between gap-3 border-t border-line py-3 ${type.active ? '' : 'opacity-40'}`}>
+      <div>
+        <div className="text-sm font-semibold text-ink">{type.name}</div>
+        <div className="text-xs text-ink-muted">{QUICK_ENTRY_KIND_LABEL[type.kind]}</div>
+      </div>
+      <button type="button" onClick={onToggleActive} className="text-xs font-semibold text-ink-muted hover:text-brand">
+        {type.active ? 'Desactivar' : 'Activar'}
+      </button>
     </div>
   );
 }

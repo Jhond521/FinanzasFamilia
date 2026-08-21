@@ -18,16 +18,19 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            // /auth/me, /users, /months, /quick-entries: lo minimo para que el formulario de
-            // Registro rapido cargue offline (ver docs del ticket ##65). NetworkFirst con timeout
-            // corto: si hay red se usa la respuesta fresca, si no cae al cache mas reciente.
+            // /auth/me, /users, /months, /quick-entries, /quick-entry-types: lo minimo para que
+            // el formulario de Registro rapido cargue offline (ver docs del ticket ##65).
+            // quick-entry-types se agrego en ##73 -- sin cache, el selector de tipos se queda
+            // vacio sin conexion. NetworkFirst con timeout corto: si hay red se usa la respuesta
+            // fresca, si no cae al cache mas reciente.
             urlPattern: ({ url, request }) =>
               request.method === 'GET' &&
               url.pathname.startsWith('/api/') &&
               (url.pathname === '/api/auth/me' ||
                 url.pathname === '/api/users' ||
                 url.pathname === '/api/months' ||
-                url.pathname === '/api/quick-entries'),
+                url.pathname === '/api/quick-entries' ||
+                url.pathname === '/api/quick-entry-types'),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-get-cache',

@@ -1,5 +1,3 @@
-import type { QuickEntryType } from './api';
-
 const DB_NAME = 'finanzas-offline';
 const DB_VERSION = 1;
 const STORE = 'pendingQuickEntries';
@@ -9,7 +7,7 @@ export type PendingQuickEntry = {
   localId: string;
   amount: string;
   description: string;
-  type: QuickEntryType;
+  typeOptionId: string;
   date: string;
   userId: string;
   createdAt: string;
@@ -59,7 +57,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore
 export async function enqueuePendingQuickEntry(input: {
   amount: string;
   description: string;
-  type: QuickEntryType;
+  typeOptionId: string;
   date: string;
   userId: string;
 }): Promise<PendingQuickEntry> {
@@ -109,7 +107,7 @@ export async function setPendingQuickEntryError(localId: string, error: string |
  * intento de sincronizacion debe volver a intentarlo, no quedarse marcado con el error viejo. */
 export async function updatePendingQuickEntry(
   localId: string,
-  input: { amount: string; description: string; type: QuickEntryType; date: string; userId: string },
+  input: { amount: string; description: string; typeOptionId: string; date: string; userId: string },
 ): Promise<void> {
   await withStore('readwrite', (store) =>
     updateEntryByLocalId(store, localId, (entry) => ({ ...entry, ...input, error: null })),

@@ -8,7 +8,13 @@ import {
   updatePendingQuickEntry,
 } from './offlineQueue';
 
-const SAMPLE = { amount: '-15000.00', description: 'Almuerzo', type: 'personal' as const, date: '2026-08-19', userId: 'user-1' };
+const SAMPLE = {
+  amount: '-15000.00',
+  description: 'Almuerzo',
+  typeOptionId: 'type-personal',
+  date: '2026-08-19',
+  userId: 'user-1',
+};
 
 beforeEach(async () => {
   // Reset entre tests: la instancia de fake-indexeddb persiste en memoria durante todo el archivo.
