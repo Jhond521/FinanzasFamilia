@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CurrencyInput } from './CurrencyInput';
 import {
   createQuickEntry,
@@ -248,7 +248,19 @@ export default function QuickEntry({ currentUser }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-6 p-4 pb-10">
       <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{editingId || editingPendingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/"
+            aria-label="Ir al Dashboard"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-line text-ink-soft transition hover:bg-cream-surface"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M3 11l9-8 9 8" />
+              <path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10" />
+            </svg>
+          </Link>
+          <h1 className="text-xl font-semibold text-ink">{editingId || editingPendingId ? 'Editar gasto' : 'Nuevo gasto'}</h1>
+        </div>
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">
           {currentUser.name.charAt(0)}
         </div>
