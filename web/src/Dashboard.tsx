@@ -380,7 +380,7 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                     </div>
                   </>
                 )}
-                <div className="mt-2 flex flex-col gap-1 text-sm text-ink-muted">
+                <div className="mt-2 flex flex-col divide-y divide-line/60 text-sm text-ink-muted">
                   {bucket.contributions.map((c) => {
                     // Semaforo tambien por persona (ticket #44): cuanto gasto cada uno contra su
                     // propia porcion del presupuesto de la bolsa, no solo el agregado.
@@ -390,20 +390,23 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
                     const contributionAvailable =
                       c.spent !== undefined ? String(Number(c.amount) - Number(c.spent)) : undefined;
                     return (
-                      <div key={c.userId} className="flex justify-between">
-                        <span>{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
-                        <span>
-                          {formatCOP(c.amount)}
+                      <div
+                        key={c.userId}
+                        className="flex flex-col gap-0.5 py-1.5 first:pt-0 last:pb-0 sm:flex-row sm:items-baseline sm:justify-between sm:gap-2"
+                      >
+                        <span className="font-medium text-ink">{users.find((u) => u.id === c.userId)?.name ?? c.userId}</span>
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 sm:justify-end">
+                          <span>{formatCOP(c.amount)}</span>
                           {c.spent !== undefined && (
                             <span
-                              className={`ml-2 text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
+                              className={`text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
                             >
                               gastado {formatCOP(c.spent)}
                             </span>
                           )}
                           {contributionAvailable !== undefined && (
                             <span
-                              className={`ml-2 text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
+                              className={`text-xs font-semibold ${contributionStatus ? STATUS_TEXT_CLASS[contributionStatus] : 'text-ink-faint'}`}
                             >
                               disponible {formatCOP(contributionAvailable)}
                             </span>
