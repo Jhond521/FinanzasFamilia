@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  createTransaction,
   fetchCategories,
   fetchCurrentUser,
   fetchMonths,
@@ -11,6 +12,7 @@ import {
   updateTransaction,
   type TransactionType,
 } from './lib/api';
+import { CurrencyInput } from './CurrencyInput';
 import { formatCOP, MESES } from './lib/money';
 import NavBar from './NavBar';
 
@@ -108,24 +110,176 @@ export default function TransactionsScreen() {
     },
   });
 
+  // Agregar transaccion manual (ticket #92): un gasto que nunca va a salir en el extracto del
+  // banco (ej. efectivo). A diferencia del registro rapido, el monto aqui va con el signo real
+  // (negativo = gasto), igual que una fila del extracto.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newDate, setNewDate] = useState(todayStr);
+  const [newDescription, setNewDescription] = useState('');
+  const [newAmount, setNewAmount] = useState('');
+  const [newOwnerUserId, setNewOwnerUserId] = useState('');
+  const [newType, setNewType] = useState<TransactionType>('joint');
+  const [newCategoryId, setNewCategoryId] = useState('');
+
+  useEffect(() => {
+    if (!newOwnerUserId && currentUser) setNewOwnerUserId(currentUser.id);
+  }, [currentUser, newOwnerUserId]);
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      createTransaction({
+        date: newDate,
+        bankDescription: newDescription,
+        amount: newAmount,
+        ownerUserId: newOwnerUserId,
+        // "Sin clasificar" explicito = mandarla a Revisar (needsReview:true), igual que una
+        // transaccion importada sin tipo -- se omite `type` para que el servidor aplique ese
+        // mismo criterio (needsReview = !type).
+        type: newType === 'unclassified' ? undefined : newType,
+        categoryId: newCategoryId || null,
+      }),
+    onSuccess: async () => {
+      setShowAddForm(false);
+      setNewDescription('');
+      setNewAmount('');
+      setNewCategoryId('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['months'] }),
+      ]);
+    },
+  });
+
   return (
     <div className="min-h-screen bg-cream">
       <NavBar />
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-extrabold text-ink">Transacciones del mes</h1>
-          <select
-            className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
-            value={selectedMonthId ?? ''}
-            onChange={(e) => setMonthId(e.target.value)}
-          >
-            {months?.map((m) => (
-              <option key={m.id} value={m.id}>
-                {MESES[m.month - 1]} {m.year}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+              value={selectedMonthId ?? ''}
+              onChange={(e) => setMonthId(e.target.value)}
+            >
+              {months?.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {MESES[m.month - 1]} {m.year}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setShowAddForm((v) => !v)}
+              className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink-soft hover:border-brand hover:text-brand"
+            >
+              {showAddForm ? 'Cancelar' : '+ Agregar transacción'}
+            </button>
+          </div>
         </div>
+
+        {showAddForm && selectedMonthId && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createMutation.mutate();
+            }}
+            className="flex flex-col gap-3 rounded-2xl border border-line bg-white p-4"
+          >
+            <p className="text-xs text-ink-muted">
+              Para un gasto que nunca va a salir en el extracto del banco (ej. efectivo). Escribe el monto con
+              signo real: negativo = gasto, positivo = ingreso.
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Fecha</span>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="rounded-lg border border-line px-3 py-2 text-sm"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Monto</span>
+                <CurrencyInput value={newAmount} onChange={setNewAmount} allowNegative />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Dueño</span>
+                <select
+                  value={newOwnerUserId}
+                  onChange={(e) => setNewOwnerUserId(e.target.value)}
+                  className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                  required
+                >
+                  {users?.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Tipo</span>
+                <select
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value as TransactionType)}
+                  className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                >
+                  {Object.entries(TYPE_LABEL).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Descripción</span>
+                <input
+                  type="text"
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Ej. Almuerzo en efectivo"
+                  className="rounded-lg border border-line px-3 py-2 text-sm"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-ink-muted">Categoría</span>
+                <select
+                  value={newCategoryId}
+                  onChange={(e) => setNewCategoryId(e.target.value)}
+                  className="rounded-lg border border-line bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">—</option>
+                  {categories?.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {createMutation.isError && (
+              <p className="text-sm text-danger">
+                {createMutation.error instanceof Error ? createMutation.error.message : 'No se pudo crear la transacción'}
+              </p>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={createMutation.isPending || !newOwnerUserId || !newAmount || !newDescription.trim()}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+              >
+                {createMutation.isPending ? 'Guardando…' : 'Guardar transacción'}
+              </button>
+            </div>
+          </form>
+        )}
 
         {months && months.length === 0 && (
           <p className="rounded-2xl border border-line bg-white p-6 text-center text-sm text-ink-muted">

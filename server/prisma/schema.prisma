@@ -350,7 +350,7 @@ model Transaction {
   id                  String           @id @default(uuid())
   monthId             String           @map("month_id")
   ownerUserId         String           @map("owner_user_id")
-  importBatchId       String           @map("import_batch_id")
+  importBatchId       String?          @map("import_batch_id")
   date                DateTime         @db.Date
   bankTime            String?          @map("bank_time") @db.VarChar(5)
   bankDescription     String           @map("bank_description")
@@ -371,7 +371,8 @@ model Transaction {
 
   month                      Month             @relation(fields: [monthId], references: [id], onDelete: Cascade)
   owner                      User              @relation("TransactionOwner", fields: [ownerUserId], references: [id])
-  importBatch                ImportBatch       @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  // Nullable (ticket #92): una transaccion creada a mano (sin archivo) no tiene batch.
+  importBatch                ImportBatch?      @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
   category                   Category?         @relation("TransactionCategory", fields: [categoryId], references: [id])
   suggestedCategory          Category?         @relation("TransactionSuggestedCategory", fields: [suggestedCategoryId], references: [id])
   rule                       Rule?             @relation(fields: [ruleId], references: [id])

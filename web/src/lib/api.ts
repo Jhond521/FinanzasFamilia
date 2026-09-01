@@ -556,7 +556,7 @@ export type Transaction = {
   id: string;
   monthId: string;
   ownerUserId: string;
-  importBatchId: string;
+  importBatchId: string | null;
   date: string;
   bankTime: string | null;
   bankDescription: string;
@@ -597,6 +597,23 @@ export async function updateTransaction(
 ): Promise<Transaction> {
   const body = await apiFetch<{ transaction: Transaction }>(`/transactions/${id}`, {
     method: 'PUT',
+    body: JSON.stringify(input),
+  });
+  return body.transaction;
+}
+
+/** Crea una transaccion manual, sin archivo (ticket #92). */
+export async function createTransaction(input: {
+  date: string;
+  bankDescription: string;
+  amount: string;
+  ownerUserId: string;
+  type?: TransactionType;
+  categoryId?: string | null;
+  detail?: string | null;
+}): Promise<Transaction> {
+  const body = await apiFetch<{ transaction: Transaction }>('/transactions', {
+    method: 'POST',
     body: JSON.stringify(input),
   });
   return body.transaction;

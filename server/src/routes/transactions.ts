@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
+import { dedupeKey as computeDedupeKey } from '../services/dedupe';
 import { findMatchCandidates } from '../services/matching';
 import { evaluateRules, type RuleCandidate } from '../services/rulesEngine';
 
@@ -35,8 +36,36 @@ const bulkUpdateSchema = z.array(
 
 const matchSchema = z.object({ quickEntryId: z.string().uuid() });
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Transaccion manual (ticket #92): sin archivo de por medio, el usuario aporta todos los campos
+// que normalmente vienen del extracto. `bankDescription` aqui SI es libre/editable -- a diferencia
+// de una transaccion importada, no representa el texto textual e inmutable de un banco (RF5).
+const createTransactionSchema = z.object({
+  date: z.string().regex(DATE_RE, 'Fecha debe ser YYYY-MM-DD'),
+  bankDescription: z.string().trim().min(1),
+  amount: z.union([z.string(), z.number()]),
+  ownerUserId: z.string().uuid(),
+  type: z.enum(TRANSACTION_TYPES).optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+  detail: z.string().trim().nullable().optional(),
+});
+
 function badRequest(res: import('express').Response, code: string, message: string): void {
   res.status(400).json({ error: { code, message } });
+}
+
+/** "2026-07-05" -> Date a medianoche UTC, para no correrse de dia por zona horaria (mismo criterio
+ * que quickEntries.ts). */
+function parseDateOnly(date: string): Date {
+  return new Date(`${date}T00:00:00.000Z`);
+}
+
+/** Busca el Month (year/month) al que pertenece una fecha YYYY-MM-DD. */
+async function findMonthForDate(date: string) {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return prisma.month.findUnique({ where: { year_month: { year, month } } });
 }
 
 function serializeTransaction(tx: Transaction) {
@@ -107,6 +136,49 @@ transactionsRouter.get('/', async (req, res) => {
   });
 
   res.json({ transactions: await attachLiveRuleConflicts(transactions) });
+});
+
+/** Crea una transaccion manual, sin archivo (ticket #92) -- ej. un gasto en efectivo que nunca va
+ * a aparecer en el extracto bancario. `importBatchId` queda null: el undo de un batch de import
+ * (imports.ts) nunca la toca, porque no pertenece a ninguno. */
+transactionsRouter.post('/', async (req, res) => {
+  const parsed = createTransactionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequest(res, 'invalid_body', parsed.error.message);
+    return;
+  }
+  const data = parsed.data;
+
+  const month = await findMonthForDate(data.date);
+  if (!month) {
+    badRequest(res, 'month_not_found', `No existe un mes creado para ${data.date.slice(0, 7)}`);
+    return;
+  }
+  if (month.status === 'closed') {
+    badRequest(res, 'month_closed', 'El mes esta cerrado');
+    return;
+  }
+
+  const amount = new Decimal(data.amount);
+  const dedupeKeyValue = computeDedupeKey(data.ownerUserId, data.date, data.bankDescription, amount);
+
+  const transaction = await prisma.transaction.create({
+    data: {
+      monthId: month.id,
+      ownerUserId: data.ownerUserId,
+      importBatchId: null,
+      date: parseDateOnly(data.date),
+      bankDescription: data.bankDescription,
+      amount,
+      dedupeKey: dedupeKeyValue,
+      type: data.type ?? 'unclassified',
+      categoryId: data.categoryId ?? null,
+      detail: data.detail ?? null,
+      classifiedBy: 'user',
+      needsReview: !data.type,
+    },
+  });
+  res.status(201).json({ transaction: serializeTransaction(transaction) });
 });
 
 transactionsRouter.put('/:id', async (req, res) => {
