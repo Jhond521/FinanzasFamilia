@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchCategories,
   fetchCurrentUser,
   fetchMonths,
+  fetchQuickEntries,
   fetchTransactions,
   fetchUsers,
   updateSheetExport,
@@ -53,6 +54,21 @@ export default function TransactionsScreen() {
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
   const selectedOwnerFilter = ownerFilter ?? currentUser?.id;
   const ownerUserId = selectedOwnerFilter === 'all' ? undefined : selectedOwnerFilter;
+
+  // Detalle del registro rapido que hizo match (ticket #93): se expande inline en la misma celda.
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+
+  // Registros rapidos sin match del mes seleccionado (mismo patron del desplegable del Dashboard,
+  // ticket #87) — tambien visibles aqui (ticket #93).
+  const { data: pendingQuickEntries } = useQuery({
+    queryKey: ['quickEntries', selectedMonthId, 'pending'],
+    queryFn: () => fetchQuickEntries(selectedMonthId!, 'pending'),
+    enabled: Boolean(selectedMonthId),
+  });
+  const [showUnmatched, setShowUnmatched] = useState(false);
+  useEffect(() => {
+    setShowUnmatched(false);
+  }, [selectedMonthId]);
 
   const { data: transactions } = useQuery({
     queryKey: ['transactions', selectedMonthId, { type: typeFilter, q: search, ownerUserId }],
@@ -202,6 +218,34 @@ export default function TransactionsScreen() {
           </p>
         )}
 
+        {Boolean(pendingQuickEntries?.length) && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowUnmatched((v) => !v)}
+              className="flex items-center gap-1 text-sm font-semibold text-ink-muted hover:text-brand"
+              aria-expanded={showUnmatched}
+            >
+              <b>{pendingQuickEntries!.length}</b> registros sin match
+              <span aria-hidden="true">{showUnmatched ? '▲' : '▼'}</span>
+            </button>
+            {showUnmatched && (
+              <ul className="mt-2 flex flex-col divide-y divide-line/60 rounded-xl border border-line bg-white text-sm">
+                {pendingQuickEntries!.map((entry) => (
+                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
+                    <span className="text-xs text-ink-faint">{entry.date}</span>
+                    <span className="flex-1 basis-40 text-ink">{entry.description}</span>
+                    <span className="text-xs text-ink-muted">
+                      {users?.find((u) => u.id === entry.userId)?.name ?? '—'}
+                    </span>
+                    <span className="font-semibold text-ink">{formatCOP(entry.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="overflow-x-auto rounded-2xl border border-line bg-white">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
@@ -211,6 +255,7 @@ export default function TransactionsScreen() {
                 <th className="px-4 py-3">Dueño</th>
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Categoria</th>
+                <th className="px-4 py-3">Match</th>
                 <th className="px-4 py-3 text-right">Valor</th>
               </tr>
             </thead>
@@ -260,12 +305,33 @@ export default function TransactionsScreen() {
                       ))}
                     </select>
                   </td>
+                  <td className="px-4 py-3">
+                    {tx.matchedQuickEntry ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedMatchId((prev) => (prev === tx.id ? null : tx.id))}
+                        className="rounded-full bg-brand-light px-2 py-1 text-xs font-semibold text-brand"
+                      >
+                        Match {expandedMatchId === tx.id ? '▲' : '▼'}
+                      </button>
+                    ) : (
+                      <span className="text-ink-faint">—</span>
+                    )}
+                    {tx.matchedQuickEntry && expandedMatchId === tx.id && (
+                      <div className="mt-2 rounded-lg border border-line bg-cream p-2 text-xs text-ink-muted">
+                        <div className="font-semibold text-ink">{tx.matchedQuickEntry.description}</div>
+                        <div>
+                          {tx.matchedQuickEntry.date} · {formatCOP(tx.matchedQuickEntry.amount)}
+                        </div>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right font-bold text-ink">{formatCOP(tx.amount)}</td>
                 </tr>
               ))}
               {transactions?.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
+                  <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
                     No hay transacciones para este filtro.
                   </td>
                 </tr>

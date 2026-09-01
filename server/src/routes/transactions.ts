@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { Prisma, type Rule as PrismaRule, type Transaction } from '@prisma/client';
+import {
+  Prisma,
+  type QuickEntry,
+  type QuickEntryTypeOption,
+  type Rule as PrismaRule,
+  type Transaction,
+} from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
@@ -37,6 +43,10 @@ function serializeTransaction(tx: Transaction) {
   return { ...tx, date: toDateOnly(tx.date) };
 }
 
+function serializeQuickEntryMatch(qe: QuickEntry & { typeOption: QuickEntryTypeOption }) {
+  return { ...qe, date: toDateOnly(qe.date) };
+}
+
 function toRuleCandidate(rule: PrismaRule): RuleCandidate {
   return {
     id: rule.id,
@@ -54,12 +64,17 @@ function toRuleCandidate(rule: PrismaRule): RuleCandidate {
  * vivo si hay reglas en conflicto — asi la cola de revision puede mostrar las opciones sin tener
  * que guardar un snapshot en la fila (ver Notas tecnicas del ticket #2).
  */
-async function attachLiveRuleConflicts(transactions: Transaction[]) {
+async function attachLiveRuleConflicts(
+  transactions: (Transaction & { matchedQuickEntry: (QuickEntry & { typeOption: QuickEntryTypeOption }) | null })[],
+) {
   const needsRecompute = transactions.some((t) => t.needsReview && !t.classifiedBy && !t.ruleId);
   const activeRules = needsRecompute ? (await prisma.rule.findMany({ where: { active: true } })).map(toRuleCandidate) : [];
 
   return transactions.map((t) => {
-    const serialized = serializeTransaction(t);
+    const serialized = {
+      ...serializeTransaction(t),
+      matchedQuickEntry: t.matchedQuickEntry ? serializeQuickEntryMatch(t.matchedQuickEntry) : null,
+    };
     if (!t.needsReview || t.classifiedBy || t.ruleId) {
       return { ...serialized, ruleConflicts: [] as RuleCandidate[] };
     }
@@ -84,6 +99,10 @@ transactionsRouter.get('/', async (req, res) => {
       ownerUserId: typeof ownerUserId === 'string' ? ownerUserId : undefined,
       bankDescription: typeof q === 'string' && q ? { contains: q, mode: 'insensitive' } : undefined,
     },
+    // matchedQuickEntry (ticket #93): cual registro rapido hizo match con esta transaccion, si
+    // aplica — se muestra en el log de Transacciones. typeOption incluido para reusar el mismo
+    // tipo `QuickEntry` del frontend (ya lo trae completo, ver fetchMatchCandidates).
+    include: { matchedQuickEntry: { include: { typeOption: true } } },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   });
 

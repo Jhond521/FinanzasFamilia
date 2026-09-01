@@ -571,6 +571,7 @@ export type Transaction = {
   suggestedCategoryId: string | null;
   suggestedDetail: string | null;
   ruleConflicts: { id: string; setType: RuleSetType; setCategoryId: string | null; setDetail: string | null }[];
+  matchedQuickEntry: QuickEntry | null;
 };
 
 export async function fetchTransactions(params: {
