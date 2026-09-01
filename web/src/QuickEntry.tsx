@@ -46,6 +46,11 @@ function formatEntryDate(dateStr: string): string {
   return `${day} ${MESES[month - 1].slice(0, 3)}`;
 }
 
+/** Invierte el signo de un monto string decimal (sin traer una lib de decimales al frontend). */
+function negateAmount(amount: string): string {
+  return amount.startsWith('-') ? amount.slice(1) : `-${amount}`;
+}
+
 export default function QuickEntry({ currentUser }: Props) {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -213,7 +218,11 @@ export default function QuickEntry({ currentUser }: Props) {
   function startEdit(entry: QuickEntryRecord) {
     setEditingId(entry.id);
     setEditingPendingId(null);
-    setAmount(entry.amount);
+    // entry.amount es el valor ya guardado en BD (ya negado por el servidor al crear/editar, ver
+    // POST/PUT /quick-entries) — hay que volver a negarlo para mostrar lo que el usuario habria
+    // escrito originalmente (gasto normal = positivo), si no, guardar sin tocar el monto invierte
+    // el signo (bug #81).
+    setAmount(negateAmount(entry.amount));
     setDescription(entry.description);
     setTypeOptionId(entry.typeOptionId);
     setUserId(entry.userId);
