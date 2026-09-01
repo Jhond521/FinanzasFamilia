@@ -317,7 +317,8 @@ function ReviewCard({
     <div className="animate-card-in rounded-2xl border border-line bg-white p-5 shadow-sm">
       <div className="mb-1 flex items-start justify-between">
         <span className="text-xs font-semibold text-ink-muted">
-          {transaction.date} · {ownerName ?? '—'}
+          {transaction.date}
+          {transaction.bankTime ? ` ${transaction.bankTime}` : ''} · {ownerName ?? '—'}
         </span>
         <span className="text-lg font-extrabold text-ink">{formatCOP(transaction.amount)}</span>
       </div>

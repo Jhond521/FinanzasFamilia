@@ -262,7 +262,10 @@ export default function TransactionsScreen() {
             <tbody>
               {transactions?.map((tx) => (
                 <tr key={tx.id} className="border-t border-line align-top">
-                  <td className="px-4 py-3 text-ink-muted">{tx.date}</td>
+                  <td className="px-4 py-3 text-ink-muted">
+                    {tx.date}
+                    {tx.bankTime && <span className="ml-1 text-xs text-ink-faint">{tx.bankTime}</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-ink">{tx.bankDescription}</div>
                     <input

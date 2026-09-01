@@ -558,6 +558,7 @@ export type Transaction = {
   ownerUserId: string;
   importBatchId: string;
   date: string;
+  bankTime: string | null;
   bankDescription: string;
   bankReference: string | null;
   amount: string;

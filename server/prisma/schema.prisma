@@ -352,6 +352,7 @@ model Transaction {
   ownerUserId         String           @map("owner_user_id")
   importBatchId       String           @map("import_batch_id")
   date                DateTime         @db.Date
+  bankTime            String?          @map("bank_time") @db.VarChar(5)
   bankDescription     String           @map("bank_description")
   bankReference       String?          @map("bank_reference")
   amount              Decimal          @db.Decimal(14, 2)
