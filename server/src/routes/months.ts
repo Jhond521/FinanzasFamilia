@@ -119,30 +119,22 @@ function activeBucketsSnapshotData(activeBuckets: Bucket[]) {
  * como por freezeMonth (para congelar el snapshot en month_summaries al cerrar entre los dos).
  */
 async function buildLiveSummary(month: Month) {
-  const [incomes, monthBuckets, quickEntries, transactions] = await Promise.all([
+  const [incomes, monthBuckets, transactions] = await Promise.all([
     prisma.income.findMany({ where: { monthId: month.id } }),
     prisma.monthBucket.findMany({ where: { monthId: month.id, active: true } }),
-    prisma.quickEntry.findMany({ where: { monthId: month.id }, include: { typeOption: true } }),
     prisma.transaction.findMany({ where: { monthId: month.id, type: { in: ['personal', 'joint'] } } }),
   ]);
 
   const total = totalIncome(incomes.map((i) => ({ userId: i.userId, amount: i.amount })));
-  // Gastado = quick_entries no-matched (Fase 2) + transactions personal/joint (Fase 3). Un
-  // quick_entry matched ya no cuenta aqui (countableAmount lo excluye) porque su transaction
-  // asociada si esta en esta lista — evita doble conteo (RF3/RF5).
-  const spendingEntries = [
-    ...quickEntries.map((entry) => ({
-      userId: entry.userId,
-      amount: entry.amount,
-      kind: entry.typeOption.kind,
-      status: entry.status,
-    })),
-    ...transactions.map((tx) => ({
-      userId: tx.ownerUserId,
-      amount: tx.amount,
-      kind: tx.type as 'personal' | 'joint',
-    })),
-  ];
+  // Gastado = solo transactions personal/joint (Fase 3), ya clasificadas via Revisar o via match
+  // con un quick_entry. Los quick_entries en si (Fase 2) no cuentan aqui (ticket #89): su unico rol
+  // es servir de candidato de auto-clasificacion al importar (matching.ts) — si nunca matchean, se
+  // ignoran para efectos de calculo, solo quedan como referencia en el desplegable de "sin match".
+  const spendingEntries = transactions.map((tx) => ({
+    userId: tx.ownerUserId,
+    amount: tx.amount,
+    kind: tx.type as 'personal' | 'joint',
+  }));
 
   // Acumuladores por persona/kind para el bloque de cierre (ahorro real / dejar en cuenta),
   // aparte de las bolsas del bloque `buckets` que ya se devolvia antes de este ticket.
