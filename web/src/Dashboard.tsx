@@ -1225,7 +1225,12 @@ function OpeningReconciliationWizard({
     queryFn: () => fetchTransactions({ monthId, ownerUserId: currentUser.id }),
   });
   const hasTransactions = Boolean(transactions?.length);
-  const blocked = !loadingTransactions && (!hasTransactions || upToDateAnswer === false);
+  // Sin transacciones no bloquea (ticket ##83): se ofrece continuar asumiendo gasto $0 a la fecha,
+  // ya que computeOpeningNumbers (server) calcula expensesToDate sobre las transactions reales y da
+  // 0 solo cuando no hay ninguna. Si SI hay transacciones pero el usuario dice que no estan al dia,
+  // eso si sigue bloqueando -- ahi hay datos parciales que darian un cuadre incorrecto.
+  const missingTransactions = !loadingTransactions && !hasTransactions;
+  const staleTransactions = !loadingTransactions && hasTransactions && upToDateAnswer === false;
 
   const { data: preview } = useQuery({
     queryKey: ['months', monthId, 'opening-reconciliation', 'preview', currentUser.id, initialBalance],
@@ -1260,13 +1265,36 @@ function OpeningReconciliationWizard({
         {step === 'check' &&
           (loadingTransactions ? (
             <p className="text-sm text-ink-muted">Verificando transacciones del mes…</p>
-          ) : blocked ? (
+          ) : missingTransactions ? (
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-ink-soft">
-                {!hasTransactions
-                  ? 'Todavía no hay transacciones importadas para este mes.'
-                  : 'Para hacer el cuadre necesitamos el extracto al día.'}
+              <p className="text-sm text-ink-soft">Todavía no hay transacciones importadas para este mes.</p>
+              <p className="text-sm text-ink-muted">
+                Puedes importar primero el archivo del banco con lo que va del mes, o continuar sin archivo: en ese
+                caso se asume que tus gastos del mes hasta hoy son $0.
               </p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={onClose} className="px-3 py-2 text-sm text-ink-muted">
+                  Cerrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep('balance')}
+                  className="rounded-lg border border-line px-3 py-2 text-sm text-ink-soft"
+                >
+                  Continuar sin archivo
+                </button>
+                <Link
+                  to="/importar"
+                  onClick={onClose}
+                  className="rounded-lg bg-brand px-3 py-2 text-center text-sm font-semibold text-white hover:bg-brand-hover"
+                >
+                  Ir a importar
+                </Link>
+              </div>
+            </div>
+          ) : staleTransactions ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-ink-soft">Para hacer el cuadre necesitamos el extracto al día.</p>
               <p className="text-sm text-ink-muted">
                 Descarga un archivo con las transacciones hasta este momento, impórtalo, y recuerda anotar el saldo
                 exacto de tu cuenta antes de continuar.
