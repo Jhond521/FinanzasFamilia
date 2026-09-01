@@ -281,6 +281,14 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
     queryFn: () => fetchQuickEntries(monthId, 'pending'),
   });
 
+  // Desplegable de "registros sin match" (ticket #87): colapsado por defecto y se cierra al
+  // cambiar de mes para no mostrar la lista abierta con datos que ya no corresponden mientras
+  // carga el nuevo query.
+  const [showUnmatched, setShowUnmatched] = useState(false);
+  useEffect(() => {
+    setShowUnmatched(false);
+  }, [monthId]);
+
   return (
     <div className="flex flex-col gap-6">
       {detail && (
@@ -309,11 +317,32 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
             </span>
           )}
           {Boolean(pendingQuickEntries?.length) && (
-            <span className="text-ink-muted">
+            <button
+              type="button"
+              onClick={() => setShowUnmatched((v) => !v)}
+              className="flex items-center gap-1 font-semibold text-ink-muted hover:text-brand"
+              aria-expanded={showUnmatched}
+            >
               <b>{pendingQuickEntries!.length}</b> registros sin match
-            </span>
+              <span aria-hidden="true">{showUnmatched ? '▲' : '▼'}</span>
+            </button>
           )}
         </div>
+      )}
+
+      {showUnmatched && Boolean(pendingQuickEntries?.length) && (
+        <ul className="flex flex-col divide-y divide-line/60 rounded-xl border border-line bg-white text-sm">
+          {pendingQuickEntries!.map((entry) => (
+            <li key={entry.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2">
+              <span className="text-xs text-ink-faint">{entry.date}</span>
+              <span className="flex-1 basis-40 text-ink">{entry.description}</span>
+              <span className="text-xs text-ink-muted">
+                {users.find((u) => u.id === entry.userId)?.name ?? '—'}
+              </span>
+              <span className="font-semibold text-ink">{formatCOP(entry.amount)}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
       <section className="rounded-xl border border-line bg-white p-4 shadow-sm">
