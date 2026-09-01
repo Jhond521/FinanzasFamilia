@@ -227,7 +227,38 @@ async function buildLiveSummary(month: Month) {
   };
 }
 
+/** Ticket #91: crea el mes calendario actual si todavia no existe cuando alguien abre la app (sin
+ * infraestructura de cron — la app siempre la abre una persona viva, no hace falta un job a las
+ * 00:00:00 en punto). Idempotente: si dos requests llegan a la vez, el constraint unico
+ * (year, month) hace que el segundo insert falle con P2002 y simplemente se ignora. */
+async function ensureCurrentMonthExists(): Promise<void> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const existing = await prisma.month.findUnique({ where: { year_month: { year, month } } });
+  if (existing) return;
+
+  const activeBuckets = await prisma.bucket.findMany({ where: { active: true }, orderBy: { sortOrder: 'asc' } });
+  try {
+    await prisma.month.create({
+      data: {
+        year,
+        month,
+        monthBuckets: { create: activeBucketsSnapshotData(activeBuckets) },
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return; // otro request lo creo primero, nada que hacer
+    }
+    throw error;
+  }
+}
+
 monthsRouter.get('/', async (_req, res) => {
+  await ensureCurrentMonthExists();
+
   const months = await prisma.month.findMany({
     orderBy: [{ year: 'desc' }, { month: 'desc' }],
     include: { incomes: true },
