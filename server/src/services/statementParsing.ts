@@ -28,6 +28,23 @@ export function parseStatementDate(value: string | number | Date): string {
   throw new Error(`Fecha invalida en el extracto: "${str}"`);
 }
 
+/**
+ * Extrae la hora de una celda `Fecha` cuando el archivo la trae (ticket #80). Solo soporta el caso
+ * en que la celda ya vino tipada como `Date` (Excel serial date con hora, el caso mas comun con
+ * `cellDates: true` en xlsxParser.ts) -- ahi mismo se estaba descartando la hora al truncar a
+ * `YYYY-MM-DD`. Si la celda es un string (formato "07/31/26" sin hora) no hay hora que extraer.
+ * Devuelve `null` si no hay hora real (medianoche exacta es indistinguible de "sin hora", no se
+ * inventa un valor). Usa UTC para ser consistente con `parseStatementDate`, que tambien lee la
+ * fecha en UTC de esa misma celda.
+ */
+export function parseStatementTime(value: string | number | Date): string | null {
+  if (!(value instanceof Date)) return null;
+  const hours = value.getUTCHours();
+  const minutes = value.getUTCMinutes();
+  if (hours === 0 && minutes === 0 && value.getUTCSeconds() === 0) return null;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
 export function parseStatementAmount(value: string | number): string {
   if (typeof value === 'number') {
     return value.toFixed(2);

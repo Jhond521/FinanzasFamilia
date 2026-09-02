@@ -456,23 +456,6 @@ function MonthPanel({ monthId, users }: { monthId: string; users: { id: string; 
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-white/60">
             Cierre del mes · ahorro real
           </h2>
-          <p className="mb-4 max-w-xl text-sm leading-relaxed text-white/85">
-            {Number(summary.close.sharedExpensesExcess) > 0
-              ? `Gastos del Mes se pasó ${formatCOP(summary.close.sharedExpensesExcess)} en total. El sobregasto (o el bono, si sobró) lo asume quien lo generó — cada quien responde por su propia bolsa, no se reparte por ingreso.`
-              : 'Gastos del Mes no se pasó del presupuesto en total: el ahorro real de cada quien depende de su propia bolsa (aporte a Ahorros Conjuntos + lo que le sobró o faltó en Gastos del Mes).'}
-          </p>
-          <div className="flex flex-wrap gap-8">
-            {summary.close.perPerson.map((p) => (
-              <div key={p.userId}>
-                <div className="text-xs text-white/60">
-                  {users.find((u) => u.id === p.userId)?.name ?? p.userId} mueve a ahorros
-                </div>
-                <div className="text-lg font-extrabold">{formatCOP(p.realSavings)}</div>
-                <div className="mt-2 text-xs text-white/60">Deja en cuenta</div>
-                <div className="text-sm font-bold">{formatCOP(p.leaveInAccount)}</div>
-              </div>
-            ))}
-          </div>
           {currentUser && (
             <MonthClosureSection
               monthId={monthId}
