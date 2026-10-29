@@ -178,20 +178,23 @@ function MatchCandidatesSection({ monthId, ownerUserId }: { monthId: string; own
     },
   });
 
-  const ambiguous = (pendingReview ?? [])
+  // Basta con un candidato (no >1, ticket #95): al resolver una ambiguedad entre varias
+  // transacciones del mismo monto, la siguiente queda con un unico registro rapido pendiente y,
+  // si se filtrara, no habria otro lugar de la UI para confirmar ese match.
+  const withCandidates = (pendingReview ?? [])
     .map((tx, i) => ({ tx, candidates: candidateQueries[i]?.data ?? [] }))
-    .filter((entry) => entry.candidates.length > 1);
+    .filter((entry) => entry.candidates.length > 0);
 
-  if (ambiguous.length === 0) return null;
+  if (withCandidates.length === 0) return null;
 
   return (
     <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
       <h2 className="mb-3 font-bold text-ink">Candidatos de match</h2>
       <p className="mb-3 text-xs text-ink-muted">
-        Varios registros rapidos calzan con la misma transaccion. Elige cual va con cual.
+        Estos registros rapidos calzan con transacciones pendientes. Elige cual va con cual.
       </p>
       <div className="flex flex-col gap-4">
-        {ambiguous.map(({ tx, candidates }) => (
+        {withCandidates.map(({ tx, candidates }) => (
           <div key={tx.id} className="border-t border-line pt-3">
             <div className="mb-2 flex items-center justify-between text-sm">
               <span className="font-semibold text-ink">{tx.bankDescription}</span>
