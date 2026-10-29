@@ -137,6 +137,21 @@ NIT 901.658.107-2 puedes ver en la app. abajo y es porque ajustamos la tasa a tu
 5/6
 `;
 
+// Filas del extracto de agosto 2026 adjunto en ##98 (transcritas de la imagen del reporte, en la
+// misma forma de linea que produce el OCR): cuota 2 de 24 con interes, cuota 1 de 24 sin interes,
+// y una compra con "Valor del mes" $0 que solo cobra interes.
+const PAGE_AUG_2026 = `
+Fecha Descripción Valor Cuotas Valor Interés del mes Total a pagar Restante
+del mes Porcentaje y valor este mes por pagar
+26 AGO 2026 Temu Com $207.003,00 1 de 1 $207.003,00 2.16% $0,00 $207.003,00 $0,00
+25 AGO Steamgames.Co $223.920,00 1 de 24 $9.330,00 2.16% $0,00 $9.330,00 $214.590,00
+2026 m
+14 AGO Amazon Prime $24.900,00 1 de 1 $0,00 2.16% $591,04 $591,04 $24.900,00
+2026
+08 AGO Anthropic* $63.148,60 2 de 24 $2.631,19 2.16% $1.771,47 $4.402,66 $60.517,41
+2026 Claude Sub
+`;
+
 const PAGE_6_LEGAL = `
 ¿Tienes preguntas sobre tu extracto?
 Sobre tus compras internacionales
@@ -206,27 +221,52 @@ describe('parseNuPdfText', () => {
     expect(rows.filter((r) => r.description === 'Uber Rides*DI')).toHaveLength(2);
   });
 
-  it('usa "Total a pagar este mes" (no "Valor") para compras en cuotas', () => {
+  it('usa "Valor" (valor completo, no la cuota) para compras en cuotas', () => {
     const rows = parseNuPdfText([PAGE_3]);
-    const anthropic = rows.find((r) => r.description.includes('Anthropic'));
-    // Valor de la compra es $67.013,60 mensualizado a 24 cuotas; el cobro de este ciclo es $2.792,23
-    expect(anthropic?.amount).toBe('2792.23');
-    expect(anthropic?.description).toBe('Anthropic* Claude Sub');
+    const anthropic = rows.filter((r) => r.description.includes('Anthropic'));
+    // Valor de la compra es $67.013,60 a 24 cuotas; la cuota de este ciclo ($2.792,23) ya no se usa
+    expect(anthropic).toEqual([{ date: '2026-07-08', description: 'Anthropic* Claude Sub', amount: '67013.60' }]);
   });
 
-  it('marca como interes (no compra duplicada) las filas de mora de una compra ya facturada', () => {
+  it('usa "Valor" en cuotas posteriores a la primera y agrega el interes como linea aparte', () => {
+    const rows = parseNuPdfText([PAGE_AUG_2026]);
+    expect(rows.filter((r) => r.description.startsWith('Anthropic'))).toEqual([
+      { date: '2026-08-08', description: 'Anthropic* Claude Sub', amount: '63148.60' },
+      { date: '2026-08-08', description: 'Anthropic* Claude Sub intereses', amount: '1771.47' },
+    ]);
+    expect(rows.filter((r) => r.description.startsWith('Steamgames'))).toEqual([
+      { date: '2026-08-25', description: 'Steamgames.Co m', amount: '223920.00' },
+    ]);
+  });
+
+  it('con "Valor del mes" $0 importa el valor completo y el interes como linea aparte', () => {
+    const rows = parseNuPdfText([PAGE_AUG_2026]);
+    expect(rows.filter((r) => r.description.startsWith('Amazon Prime'))).toEqual([
+      { date: '2026-08-14', description: 'Amazon Prime', amount: '24900.00' },
+      { date: '2026-08-14', description: 'Amazon Prime intereses', amount: '591.04' },
+    ]);
+  });
+
+  it('Σ de las lineas = Total a pagar + Restante por pagar (cuadra con un pago completo)', () => {
+    const rows = parseNuPdfText([PAGE_AUG_2026]);
+    const sumCents = rows.reduce((acc, r) => acc + Math.round(Number(r.amount) * 100), 0);
+    // (207.003 + 0) + (9.330 + 214.590) + (591,04 + 24.900) + (4.402,66 + 60.517,41)
+    expect(sumCents).toBe(52133411);
+  });
+
+  it('la linea de intereses incluye la mora (Total a pagar - Valor del mes)', () => {
     const rows = parseNuPdfText([PAGE_5]);
-    const amazonInteres = rows.find((r) => r.description.startsWith('Amazon Prime'));
-    expect(amazonInteres?.description).toBe('Amazon Prime (interés)');
-    // 401,09 (interes del mes) + 69,75 (mora) = 470,84 (total a pagar este mes)
-    expect(amazonInteres?.amount).toBe('470.84');
-    expect(amazonInteres?.date).toBe('2026-06-13');
+    expect(rows.filter((r) => r.description.startsWith('Amazon Prime'))).toEqual([
+      { date: '2026-06-13', description: 'Amazon Prime', amount: '24900.00' },
+      // 401,09 (interes del mes) + 69,75 (mora) = 470,84
+      { date: '2026-06-13', description: 'Amazon Prime intereses', amount: '470.84' },
+    ]);
   });
 
   it('no genera filas separadas para las anotaciones de comision o mora', () => {
     const rows = parseNuPdfText([PAGE_5]);
     expect(rows.some((r) => /intereses en|mora$/i.test(r.description))).toBe(false);
-    expect(rows).toHaveLength(8); // 4 compras + 4 filas de interes/mora de cuotas viejas
+    expect(rows).toHaveLength(12); // 4 compras de contado + 4 compras con interes/mora (2 lineas c/u)
   });
 
   it('no genera filas separadas para las anotaciones de comision por cambio de moneda', () => {
@@ -241,7 +281,7 @@ describe('parseNuPdfText', () => {
     const rows = parseNuPdfText([PAGE_5]);
     const nitrado = rows.find((r) => r.description.includes('Nitrado'));
     expect(nitrado?.date).toBe('2026-06-11');
-    expect(nitrado?.amount).toBe('469.43');
+    expect(nitrado?.amount).toBe('22342.52');
   });
 
   it('acepta multiples paginas y las procesa como un solo extracto continuo', () => {
