@@ -10,6 +10,7 @@ import {
   fetchCategories,
   fetchQuickEntryTypes,
   fetchRules,
+  fetchUsers,
   updateAppSettings,
   updateBucket,
   updateQuickEntryType,
@@ -20,11 +21,13 @@ import {
   type QuickEntryTypeInput,
   type QuickEntryTypeOption,
   type Rule,
+  type RuleInput,
   type RuleMode,
   type RuleSetType,
   type SplitMode,
 } from './lib/api';
 import { CurrencyInput } from './CurrencyInput';
+import { formatCOP } from './lib/money';
 import NavBar from './NavBar';
 
 const TYPE_LABEL: Record<RuleSetType, string> = { personal: 'Personal', joint: 'Conjunto', movement: 'Movimiento' };
@@ -44,9 +47,54 @@ const QUICK_ENTRY_KIND_LABEL: Record<QuickEntryKind, string> = {
   movement: 'Movimiento (no entra en los totales)',
 };
 
-type DraftRule = { pattern: string; setType: RuleSetType; categoryId: string; mode: RuleMode; setDetail: string };
+type DraftRule = {
+  pattern: string;
+  setType: RuleSetType;
+  categoryId: string;
+  mode: RuleMode;
+  setDetail: string;
+  // Condiciones opcionales extra (##97); '' = no se exige.
+  referencePattern: string;
+  amount: string;
+  ownerUserId: string;
+};
 
-const EMPTY_DRAFT: DraftRule = { pattern: '', setType: 'joint', categoryId: '', mode: 'auto', setDetail: '' };
+const EMPTY_DRAFT: DraftRule = {
+  pattern: '',
+  setType: 'joint',
+  categoryId: '',
+  mode: 'auto',
+  setDetail: '',
+  referencePattern: '',
+  amount: '',
+  ownerUserId: '',
+};
+
+function draftFromRule(rule: Rule): DraftRule {
+  return {
+    pattern: rule.pattern,
+    setType: rule.setType,
+    categoryId: rule.setCategoryId ?? '',
+    mode: rule.mode,
+    setDetail: rule.setDetail ?? '',
+    referencePattern: rule.referencePattern ?? '',
+    amount: rule.amount ?? '',
+    ownerUserId: rule.ownerUserId ?? '',
+  };
+}
+
+function draftToInput(draft: DraftRule): RuleInput {
+  return {
+    pattern: draft.pattern,
+    setType: draft.setType,
+    setCategoryId: draft.categoryId || null,
+    setDetail: draft.setDetail.trim() || null,
+    mode: draft.mode,
+    referencePattern: draft.referencePattern.trim() || null,
+    amount: draft.amount || null,
+    ownerUserId: draft.ownerUserId || null,
+  };
+}
 
 type DraftBucket = { name: string; percentage: string; splitMode: SplitMode; kind: BucketKind };
 const EMPTY_BUCKET_DRAFT: DraftBucket = { name: '', percentage: '', splitMode: 'proportional', kind: 'other' };
@@ -58,27 +106,29 @@ export default function ConfigurationScreen() {
   const queryClient = useQueryClient();
   const { data: rules } = useQuery({ queryKey: ['rules'], queryFn: fetchRules });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
 
   const [showForm, setShowForm] = useState(false);
   const [draft, setDraft] = useState<DraftRule>(EMPTY_DRAFT);
+  // null = creando una regla nueva; id = editando esa regla.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showConditions, setShowConditions] = useState(false);
 
   async function invalidate() {
     await queryClient.invalidateQueries({ queryKey: ['rules'] });
   }
 
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createRule({
-        pattern: draft.pattern,
-        setType: draft.setType,
-        setCategoryId: draft.categoryId || undefined,
-        setDetail: draft.setDetail || undefined,
-        mode: draft.mode,
-      }),
+  function closeForm() {
+    setDraft(EMPTY_DRAFT);
+    setEditingId(null);
+    setShowForm(false);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => (editingId ? updateRule(editingId, draftToInput(draft)) : createRule(draftToInput(draft))),
     onSuccess: async () => {
       await invalidate();
-      setDraft(EMPTY_DRAFT);
-      setShowForm(false);
+      closeForm();
     },
   });
 
@@ -115,7 +165,16 @@ export default function ConfigurationScreen() {
             <h2 className="font-bold text-ink">Reglas de clasificacion</h2>
             <button
               type="button"
-              onClick={() => setShowForm((v) => !v)}
+              onClick={() => {
+                if (showForm) {
+                  closeForm();
+                } else {
+                  setDraft(EMPTY_DRAFT);
+                  setEditingId(null);
+                  setShowConditions(false);
+                  setShowForm(true);
+                }
+              }}
               className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-brand-hover"
             >
               + Regla
@@ -169,14 +228,67 @@ export default function ConfigurationScreen() {
                 onChange={(e) => setDraft({ ...draft, setDetail: e.target.value })}
                 className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
               />
-              <button
-                type="button"
-                disabled={!draft.pattern.trim() || createMutation.isPending}
-                onClick={() => createMutation.mutate()}
-                className="rounded-lg bg-ink px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+              <details
+                open={showConditions}
+                onToggle={(e) => setShowConditions(e.currentTarget.open)}
+                className="col-span-2 sm:col-span-3"
               >
-                Guardar
-              </button>
+                <summary className="cursor-pointer text-xs font-semibold text-ink-muted">
+                  Más condiciones (referencia, monto, dueño)
+                </summary>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <input
+                    type="text"
+                    placeholder="Referencia contiene (ej. 3206746644)"
+                    value={draft.referencePattern}
+                    onChange={(e) => setDraft({ ...draft, referencePattern: e.target.value })}
+                    className="col-span-2 rounded-lg border border-line px-3 py-2 text-sm text-ink sm:col-span-1"
+                  />
+                  <CurrencyInput
+                    value={draft.amount}
+                    onChange={(amount) => setDraft({ ...draft, amount })}
+                    placeholder="Monto exacto"
+                    ariaLabel="Monto exacto"
+                  />
+                  <select
+                    value={draft.ownerUserId}
+                    onChange={(e) => setDraft({ ...draft, ownerUserId: e.target.value })}
+                    className="rounded-lg border border-line px-3 py-2 text-sm"
+                  >
+                    <option value="">Cualquier dueño</option>
+                    {users?.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        Solo {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="mt-2 text-xs text-ink-muted">
+                  Todas las condiciones deben cumplirse. Si varias reglas calzan, gana la que tiene más condiciones.
+                </p>
+              </details>
+              {saveMutation.isError && (
+                <p className="col-span-2 text-xs font-semibold text-danger sm:col-span-3">
+                  {saveMutation.error instanceof Error ? saveMutation.error.message : 'No se pudo guardar la regla'}
+                </p>
+              )}
+              <div className="col-span-2 flex gap-2 sm:col-span-3">
+                <button
+                  type="button"
+                  disabled={!draft.pattern.trim() || saveMutation.isPending}
+                  onClick={() => saveMutation.mutate()}
+                  className="rounded-lg bg-ink px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {editingId ? 'Guardar cambios' : 'Guardar'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeForm}
+                  className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink-muted"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           )}
 
@@ -202,7 +314,10 @@ export default function ConfigurationScreen() {
                     rule.active ? '' : 'opacity-40'
                   }`}
                 >
-                  <div className="font-semibold text-ink">{rule.pattern}</div>
+                  <div>
+                    <div className="font-semibold text-ink">{rule.pattern}</div>
+                    <RuleConditions rule={rule} users={users ?? []} />
+                  </div>
                   <div className="text-ink-muted">{rule.mode === 'auto' ? 'Auto' : 'Sugerir'}</div>
                   <div className="text-ink-muted">
                     {TYPE_LABEL[rule.setType]} → {categories?.find((c) => c.id === rule.setCategoryId)?.name ?? '—'}
@@ -210,6 +325,19 @@ export default function ConfigurationScreen() {
                   <div className="text-ink-muted">{ORIGIN_LABEL[rule.createdFrom]}</div>
                   <div className="text-right font-bold text-ink">{rule.hitCount}</div>
                   <div className="flex justify-end gap-3 whitespace-nowrap text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraft(draftFromRule(rule));
+                        setEditingId(rule.id);
+                        // Abierto de entrada si la regla ya tiene condiciones extra.
+                        setShowConditions(Boolean(rule.referencePattern || rule.amount || rule.ownerUserId));
+                        setShowForm(true);
+                      }}
+                      className="text-brand"
+                    >
+                      Editar
+                    </button>
                     <button type="button" onClick={() => toggleMutation.mutate(rule)} className="text-ink-muted">
                       {rule.active ? 'Desactivar' : 'Activar'}
                     </button>
@@ -225,6 +353,17 @@ export default function ConfigurationScreen() {
       </div>
     </div>
   );
+}
+
+/** Condiciones extra de una regla (##97), ej. "ref 3206746644 · $500.000 · Solo John". */
+function RuleConditions({ rule, users }: { rule: Rule; users: { id: string; name: string }[] }) {
+  const parts = [
+    rule.referencePattern ? `ref ${rule.referencePattern}` : null,
+    rule.amount ? formatCOP(rule.amount) : null,
+    rule.ownerUserId ? `Solo ${users.find((u) => u.id === rule.ownerUserId)?.name ?? '—'}` : null,
+  ].filter((p): p is string => p !== null);
+  if (parts.length === 0) return null;
+  return <div className="text-xs text-ink-muted">{parts.join(' · ')}</div>;
 }
 
 function GeneralSettingsSection() {

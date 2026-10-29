@@ -493,6 +493,10 @@ export type Rule = {
   id: string;
   pattern: string;
   amountSign: RuleAmountSign;
+  /** Condiciones opcionales extra (##97): referencia contiene, monto exacto |valor|, dueño. */
+  referencePattern: string | null;
+  amount: string | null;
+  ownerUserId: string | null;
   setType: RuleSetType;
   setCategoryId: string | null;
   setDetail: string | null;
@@ -514,6 +518,9 @@ export type RuleInput = {
   setDetail?: string | null;
   mode: RuleMode;
   amountSign?: RuleAmountSign;
+  referencePattern?: string | null;
+  amount?: string | null;
+  ownerUserId?: string | null;
 };
 
 export async function createRule(input: RuleInput): Promise<Rule> {

@@ -27,6 +27,7 @@ model User {
   openingReconciliations OpeningReconciliation[]
   monthClosures         MonthClosure[]
   familySavingsEntries  FamilySavingsEntry[]
+  rulesOwned            Rule[]        @relation("RuleOwner")
 
   @@map("users")
 }
@@ -287,6 +288,11 @@ model Rule {
   pattern       String
   matchField    String      @default("bank_description") @map("match_field")
   amountSign    AmountSign  @default(any) @map("amount_sign")
+  // Condiciones opcionales extra (##97), todas en AND con `pattern`: referencia del extracto
+  // contiene X, monto exacto en valor absoluto, y dueño de la transaccion.
+  referencePattern String?  @map("reference_pattern")
+  amount           Decimal? @db.Decimal(14, 2)
+  ownerUserId      String?  @map("owner_user_id")
   setType       RuleSetType @map("set_type")
   setCategoryId String?     @map("set_category_id")
   setDetail     String?     @map("set_detail")
@@ -298,6 +304,7 @@ model Rule {
   updatedAt     DateTime    @updatedAt @map("updated_at")
 
   setCategory  Category?     @relation("RuleSetCategory", fields: [setCategoryId], references: [id])
+  owner        User?         @relation("RuleOwner", fields: [ownerUserId], references: [id])
   transactions Transaction[]
 
   @@map("rules")

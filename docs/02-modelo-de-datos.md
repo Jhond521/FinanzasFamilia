@@ -60,6 +60,10 @@ transactions                 -- filas del extracto bancario
 rules                        -- motor de clasificación (determinístico)
   id, pattern TEXT (substring, case/acentos-insensitive), match_field ('bank_description'),
   amount_sign ('any'|'positive'|'negative') DEFAULT 'any',
+  -- condiciones opcionales extra (##97), todas en AND con pattern:
+  reference_pattern TEXT NULL (bank_reference contiene, case/acentos-insensitive),
+  amount NUMERIC(14,2) NULL (monto exacto en |valor|), owner_user_id FK NULL (dueño de la transacción),
+  -- si varias reglas calzan, gana la de más condiciones; empate → conflicto (a revisión)
   set_type ('personal'|'joint'|'movement'), set_category_id FK NULL, set_detail TEXT NULL,
   mode ('auto'|'suggest'), active BOOL, hit_count INT,
   created_from ('seed'|'user'|'learned')

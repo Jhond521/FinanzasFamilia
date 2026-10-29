@@ -99,8 +99,9 @@ POST /api/transactions/:id/match          { quickEntryId } → concilia manualme
 
 ```
 GET    /api/rules
-POST   /api/rules             { pattern, setType, setDetail?, mode, amountSign? }
-PUT    /api/rules/:id
+POST   /api/rules             { pattern, setType, setCategoryId?, setDetail?, mode, amountSign?,
+                                referencePattern?, amount? ("500000.00", positivo), ownerUserId? }
+PUT    /api/rules/:id         mismos campos, todos opcionales (+ active); null quita la condición
 DELETE /api/rules/:id
 GET    /api/rules/suggestions?monthId=    → propuestas aprendidas (descripción repetida ≥3 veces)
 POST   /api/rules/suggestions/accept      { pattern, ... } → crea la regla y opcionalmente

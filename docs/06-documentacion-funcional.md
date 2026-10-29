@@ -261,8 +261,13 @@ Panel de administración, con estas secciones:
   que `/r` nunca se quede sin ninguna opción.
 - **Reglas de clasificación**: CRUD de reglas del motor determinístico de la cola de Revisar — patrón
   de texto (case/acentos-insensitive), tipo a asignar, categoría, detalle opcional, modo (Auto aplica
-  directo / Sugerir deja la transacción en revisión con la sugerencia precargada), activar/desactivar
-  y borrar. Se ve el origen de cada regla (Semilla/Manual/Aprendida) y cuántas veces se disparó.
+  directo / Sugerir deja la transacción en revisión con la sugerencia precargada), activar/desactivar,
+  editar y borrar. Se ve el origen de cada regla (Semilla/Manual/Aprendida) y cuántas veces se disparó.
+  En "Más condiciones" (##97) una regla puede exigir además que la **referencia** del extracto contenga
+  un texto, un **monto exacto** (en valor absoluto) y/o un **dueño** (solo John / solo Lina) — ej.
+  "NEQUI" + ref 3206746644 + $500.000 + John → Personal, "Ayuda papá". Todas las condiciones deben
+  cumplirse; si varias reglas calzan la misma transacción gana la que exige más condiciones, y si
+  empatan queda a revisión como conflicto.
 
 ## 11. Reglas de negocio transversales
 

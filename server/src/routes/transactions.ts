@@ -3,7 +3,6 @@ import {
   Prisma,
   type QuickEntry,
   type QuickEntryTypeOption,
-  type Rule as PrismaRule,
   type Transaction,
 } from '@prisma/client';
 import { z } from 'zod';
@@ -11,7 +10,7 @@ import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
 import { dedupeKey as computeDedupeKey } from '../services/dedupe';
 import { findMatchCandidates } from '../services/matching';
-import { evaluateRules, type RuleCandidate } from '../services/rulesEngine';
+import { evaluateRules, toRuleCandidate, type RuleCandidate } from '../services/rulesEngine';
 
 export const transactionsRouter = Router();
 
@@ -76,17 +75,6 @@ function serializeQuickEntryMatch(qe: QuickEntry & { typeOption: QuickEntryTypeO
   return { ...qe, date: toDateOnly(qe.date) };
 }
 
-function toRuleCandidate(rule: PrismaRule): RuleCandidate {
-  return {
-    id: rule.id,
-    pattern: rule.pattern,
-    amountSign: rule.amountSign,
-    setType: rule.setType,
-    setCategoryId: rule.setCategoryId,
-    setDetail: rule.setDetail,
-    mode: rule.mode,
-  };
-}
 
 /**
  * Para transactions que nunca recibieron sugerencia de regla (ni auto ni suggest), recalcula en
@@ -107,7 +95,7 @@ async function attachLiveRuleConflicts(
     if (!t.needsReview || t.classifiedBy || t.ruleId) {
       return { ...serialized, ruleConflicts: [] as RuleCandidate[] };
     }
-    const evaluation = evaluateRules(t.bankDescription, t.amount, activeRules);
+    const evaluation = evaluateRules(t, activeRules);
     return { ...serialized, ruleConflicts: evaluation.outcome === 'conflict' ? evaluation.candidates : [] };
   });
 }
