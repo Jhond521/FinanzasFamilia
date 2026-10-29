@@ -226,7 +226,9 @@ conciliación de la tarjeta de crédito de cada quien.
     permitidos para devoluciones/cancelaciones).
   - **Importar extracto Nu** (csv/xlsx instantáneo, o **PDF vía OCR server-side** — ##59/##61, más
     lento) para precargar filas, editables antes de guardarlas en bloque; el tipo se asigna por fila
-    antes de confirmar.
+    antes de confirmar. En el PDF cada compra entra con su **Valor** completo (también en cuotas), y
+    lo que la fila cobra de interés/mora sale como una línea aparte "<descripción> intereses" (##98),
+    para que con pago total la suma cuadre con lo pagado.
 - **Barra de progreso**: Σ de los items registrados contra el monto pagado, con semáforo (cuadra /
   falta / se pasó) y aviso si quedó de más para que se ajuste.
 - **Resumen del mes**: split Personal vs. Conjunto de lo registrado, en monto y %.

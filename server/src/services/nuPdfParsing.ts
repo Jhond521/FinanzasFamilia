@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { ParsedCardItemRow } from './nuParser';
 
 /**
@@ -9,13 +10,15 @@ import type { ParsedCardItemRow } from './nuParser';
  * la pantalla de revisión antes de guardarse (ver `CardsScreen.tsx`), así que el objetivo es "buen
  * punto de partida", no exactitud garantizada.
  *
- * Se usa siempre `Total a pagar este mes` como monto (no `Valor`): para compras en cuotas es el
- * cobro de este ciclo, y para compras de contado ambos valores coinciden (verificado en las
- * páginas de ejemplo). Las filas con `Valor del mes = $0,00` pero `Total a pagar este mes > 0` son
- * intereses/mora de una compra ya importada en un mes anterior — no una compra nueva. Se marcan con
- * el sufijo " (interés)" en vez de descartarlas, para que el total del extracto siga cuadrando y a
- * la vez quede claro en la revisión que no es una compra duplicada.
+ * Se usa siempre `Valor` (el valor completo de la transaccion) como monto, en todas las cuotas y
+ * aunque `Valor del mes` sea $0,00 (##98 — antes se usaba `Total a pagar este mes`, que en compras
+ * a cuotas es solo la cuota del ciclo). La tarjeta se paga completa cada mes, asi que lo pagado es
+ * Σ Valor + intereses: lo que la fila cobra de mas sobre su `Valor del mes` (interes del mes + mora,
+ * `Total a pagar este mes - Valor del mes`) sale como una linea aparte "<descripcion> intereses",
+ * para que el extracto cuadre con el pago y el interes quede visible por separado.
  */
+
+const { Decimal } = Prisma;
 
 const MONTHS: Record<string, string> = {
   ENE: '01',
@@ -55,7 +58,14 @@ export function parseNuPdfAmount(raw: string): string {
   return (negative ? -num : num).toFixed(2);
 }
 
-type PendingRow = { day: string; month: string; year: string | null; description: string; amount: string };
+type PendingRow = {
+  day: string;
+  month: string;
+  year: string | null;
+  description: string;
+  amount: string;
+  interest: string | null;
+};
 
 function isRowStart(line: string): boolean {
   return ROW_START_RE.test(line);
@@ -65,10 +75,13 @@ function isSkippableAnnotation(line: string): boolean {
   return COMMISSION_RE.test(line) || MORA_RE.test(line) || MORA_CONTINUATION_RE.test(line);
 }
 
-function finalizeRow(row: PendingRow): ParsedCardItemRow {
+function finalizeRow(row: PendingRow): ParsedCardItemRow[] {
   const year = row.year ?? new Date().getFullYear().toString();
   const date = `${year}-${MONTHS[row.month.toUpperCase()]}-${row.day}`;
-  return { date, description: row.description.trim(), amount: row.amount };
+  const description = row.description.trim();
+  const purchase = { date, description, amount: row.amount };
+  if (row.interest === null) return [purchase];
+  return [purchase, { date, description: `${description} intereses`, amount: row.interest }];
 }
 
 export function parseNuPdfText(pageTexts: string[]): ParsedCardItemRow[] {
@@ -102,17 +115,16 @@ export function parseNuPdfText(pageTexts: string[]): ParsedCardItemRow[] {
     const numeric = rest.match(NUMERIC_TAIL_RE);
     if (!numeric) continue; // forma de fila no reconocida — mejor omitir que inventar datos
 
-    const [, descHead, , valorDelMes, interesDelMes, totalAPagar] = numeric;
+    const [, descHead, valor, valorDelMes, , totalAPagar] = numeric;
+    const extraCharge = new Decimal(parseNuPdfAmount(totalAPagar)).minus(parseNuPdfAmount(valorDelMes));
     const row: PendingRow = {
       day,
       month,
       year: yearInline ?? null,
       description: descHead.trim(),
-      amount: parseNuPdfAmount(totalAPagar),
+      amount: parseNuPdfAmount(valor),
+      interest: extraCharge.greaterThan(0) ? extraCharge.toFixed(2) : null,
     };
-
-    const isInterestOnly = parseNuPdfAmount(valorDelMes) === '0.00' && parseNuPdfAmount(interesDelMes) !== '0.00';
-    if (isInterestOnly) row.description += ' (interés)';
 
     // Lookahead acotado: a lo sumo una linea de continuacion (año envuelto y/o resto de la
     // descripcion), luego a lo sumo una anotacion de comision/mora a saltar.
@@ -136,7 +148,7 @@ export function parseNuPdfText(pageTexts: string[]): ParsedCardItemRow[] {
       }
     }
 
-    rows.push(finalizeRow(row));
+    rows.push(...finalizeRow(row));
   }
 
   return rows;
