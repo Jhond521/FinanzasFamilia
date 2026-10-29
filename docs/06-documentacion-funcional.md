@@ -186,7 +186,9 @@ dueño (Yo / la otra persona / Ambos).
   el mismo tipo, la app pregunta si quiere convertirlo en regla automática ("¿Creo la regla?").
 - **Candidatos de match**: cuando una transacción tiene más de un registro rápido pendiente que
   calzaría (mismo monto/dueño/fecha cercana), no se auto-matchea — aparece en una sección aparte para
-  elegir manualmente cuál registro corresponde.
+  elegir manualmente cuál registro corresponde. La sección muestra toda transacción pendiente con al
+  menos un candidato, así que al resolver una ambigüedad (ej. dos trx de $50.000 contra "Helado" y
+  "Zapatos") la siguiente transacción sigue ahí con el candidato restante para confirmarlo.
 - **Tarjetas de clasificación**: una tarjeta por transacción (fecha, dueño, descripción del banco tal
   cual, valor), con:
   - Si hay conflicto entre reglas activas, chips con las categorías sugeridas por cada regla en
