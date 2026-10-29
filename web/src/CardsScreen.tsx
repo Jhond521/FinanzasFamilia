@@ -5,6 +5,7 @@ import {
   deleteCardItem,
   fetchCardMonth,
   fetchCards,
+  fetchCurrentUser,
   fetchMonths,
   importNuStatement,
   updateCardItem,
@@ -32,8 +33,10 @@ export default function CardsScreen() {
   const [monthId, setMonthId] = useState<string | undefined>(undefined);
   const selectedMonthId = monthId ?? openMonth?.id;
 
+  // Por defecto la tarjeta de quien esta logueado (ticket #100); si no tiene, la primera.
+  const { data: currentUser } = useQuery({ queryKey: ['auth', 'me'], queryFn: fetchCurrentUser });
   const [cardId, setCardId] = useState<string | undefined>(undefined);
-  const selectedCardId = cardId ?? cards?.[0]?.id;
+  const selectedCardId = cardId ?? cards?.find((c) => c.ownerUserId === currentUser?.id)?.id ?? cards?.[0]?.id;
 
   const { data: detail } = useQuery({
     queryKey: ['cardMonth', selectedCardId, selectedMonthId],
