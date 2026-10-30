@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { Prisma, type Rule as PrismaRule } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { toDateOnly } from '../lib/dates';
 import { parseBancolombiaFile } from '../services/xlsxParser';
 import { dedupeKey as computeDedupeKey, planImport } from '../services/dedupe';
 import { findMatchCandidates } from '../services/matching';
-import { evaluateRules, type RuleCandidate } from '../services/rulesEngine';
+import { evaluateRules, toRuleCandidate } from '../services/rulesEngine';
 
 export const importsRouter = Router();
 export const skippedDuplicatesRouter = Router();
@@ -24,17 +24,6 @@ function badRequest(res: import('express').Response, code: string, message: stri
   res.status(400).json({ error: { code, message } });
 }
 
-function toRuleCandidate(rule: PrismaRule): RuleCandidate {
-  return {
-    id: rule.id,
-    pattern: rule.pattern,
-    amountSign: rule.amountSign,
-    setType: rule.setType,
-    setCategoryId: rule.setCategoryId,
-    setDetail: rule.setDetail,
-    mode: rule.mode,
-  };
-}
 
 importsRouter.get('/', async (_req, res) => {
   const batches = await prisma.importBatch.findMany({
@@ -196,7 +185,10 @@ importsRouter.post('/', upload.single('file'), async (req, res) => {
         continue;
       }
 
-      const evaluation = evaluateRules(row.bankDescription, row.amount, ruleCandidates);
+      const evaluation = evaluateRules(
+        { bankDescription: row.bankDescription, bankReference: row.bankReference, amount: row.amount, ownerUserId },
+        ruleCandidates,
+      );
       if (evaluation.outcome === 'matched') {
         const rule = evaluation.rule;
         hitRuleIds.set(rule.id, (hitRuleIds.get(rule.id) ?? 0) + 1);

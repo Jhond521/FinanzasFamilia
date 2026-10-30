@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { Prisma, type Rule as PrismaRule } from '@prisma/client';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
+import { evaluateRules, toRuleCandidate } from '../services/rulesEngine';
 
 export const rulesRouter = Router();
 
@@ -10,13 +12,19 @@ const AMOUNT_SIGNS = ['any', 'positive', 'negative'] as const;
 
 const LEARN_THRESHOLD = 3;
 
+// Monto exacto de la regla (##97): string decimal positivo (se compara en valor absoluto).
+const ruleAmountSchema = z.string().trim().regex(/^\d+(\.\d{1,2})?$/, 'Monto debe ser un decimal positivo');
+
 const createRuleSchema = z.object({
   pattern: z.string().trim().min(1),
   setType: z.enum(RULE_SET_TYPES),
-  setCategoryId: z.string().uuid().optional(),
-  setDetail: z.string().trim().min(1).optional(),
+  setCategoryId: z.string().uuid().nullable().optional(),
+  setDetail: z.string().trim().min(1).nullable().optional(),
   mode: z.enum(RULE_MODES),
   amountSign: z.enum(AMOUNT_SIGNS).optional(),
+  referencePattern: z.string().trim().min(1).nullable().optional(),
+  amount: ruleAmountSchema.nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
 });
 
 const updateRuleSchema = z.object({
@@ -26,6 +34,9 @@ const updateRuleSchema = z.object({
   setDetail: z.string().trim().min(1).nullable().optional(),
   mode: z.enum(RULE_MODES).optional(),
   amountSign: z.enum(AMOUNT_SIGNS).optional(),
+  referencePattern: z.string().trim().min(1).nullable().optional(),
+  amount: ruleAmountSchema.nullable().optional(),
+  ownerUserId: z.string().uuid().nullable().optional(),
   active: z.boolean().optional(),
 });
 
@@ -45,6 +56,11 @@ function badRequest(res: import('express').Response, code: string, message: stri
   res.status(400).json({ error: { code, message } });
 }
 
+async function ownerExists(ownerUserId: string | null | undefined): Promise<boolean> {
+  if (!ownerUserId) return true;
+  return (await prisma.user.findUnique({ where: { id: ownerUserId } })) !== null;
+}
+
 rulesRouter.get('/', async (_req, res) => {
   const rules = await prisma.rule.findMany({ orderBy: { createdAt: 'asc' } });
   res.json({ rules });
@@ -57,6 +73,10 @@ rulesRouter.post('/', async (req, res) => {
     return;
   }
   const data = parsed.data;
+  if (!(await ownerExists(data.ownerUserId))) {
+    badRequest(res, 'invalid_owner', 'El dueño de la regla no existe');
+    return;
+  }
   const rule = await prisma.rule.create({
     data: {
       pattern: data.pattern,
@@ -65,6 +85,9 @@ rulesRouter.post('/', async (req, res) => {
       setDetail: data.setDetail ?? null,
       mode: data.mode,
       amountSign: data.amountSign ?? 'any',
+      referencePattern: data.referencePattern ?? null,
+      amount: data.amount ? new Prisma.Decimal(data.amount) : null,
+      ownerUserId: data.ownerUserId ?? null,
       createdFrom: 'user',
     },
   });
@@ -83,6 +106,10 @@ rulesRouter.put('/:id', async (req, res) => {
     return;
   }
   const data = parsed.data;
+  if (!(await ownerExists(data.ownerUserId))) {
+    badRequest(res, 'invalid_owner', 'El dueño de la regla no existe');
+    return;
+  }
   const rule = await prisma.rule.update({
     where: { id: existing.id },
     data: {
@@ -92,6 +119,10 @@ rulesRouter.put('/:id', async (req, res) => {
       setDetail: data.setDetail !== undefined ? data.setDetail : existing.setDetail,
       mode: data.mode ?? existing.mode,
       amountSign: data.amountSign ?? existing.amountSign,
+      referencePattern: data.referencePattern !== undefined ? data.referencePattern : existing.referencePattern,
+      amount:
+        data.amount !== undefined ? (data.amount === null ? null : new Prisma.Decimal(data.amount)) : existing.amount,
+      ownerUserId: data.ownerUserId !== undefined ? data.ownerUserId : existing.ownerUserId,
       active: data.active ?? existing.active,
     },
   });
@@ -206,16 +237,17 @@ rulesRouter.post('/:id/apply', async (req, res) => {
   res.json({ reclassified });
 });
 
-/** Aplica una regla a las transactions sin_clasificar (o needs_review) del mes que calcen su patron. */
-async function applyRuleToMonth(
-  rule: { id: string; pattern: string; setType: string; setCategoryId: string | null; setDetail: string | null; mode: string },
-  monthId: string,
-): Promise<number> {
+/**
+ * Aplica una regla a las transactions sin_clasificar (o needs_review) del mes que la calcen. Usa el
+ * mismo motor que el import (##97) para respetar todas sus condiciones — antes hacia su propio
+ * `toUpperCase().includes`, sin normalizar acentos e ignorando `amountSign`.
+ */
+async function applyRuleToMonth(rule: PrismaRule, monthId: string): Promise<number> {
   const candidates = await prisma.transaction.findMany({
     where: { monthId, needsReview: true },
   });
-  const normalizedPattern = rule.pattern.trim().toUpperCase();
-  const matching = candidates.filter((tx) => tx.bankDescription.toUpperCase().includes(normalizedPattern));
+  const candidate = toRuleCandidate(rule);
+  const matching = candidates.filter((tx) => evaluateRules(tx, [candidate]).outcome === 'matched');
 
   if (matching.length === 0) return 0;
 
