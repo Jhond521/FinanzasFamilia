@@ -37,6 +37,30 @@ export function leaveInAccountAtOpening(
 }
 
 /**
+ * Lo que de verdad se espera ver en la cuenta tras el cuadre: leaveInAccountAtOpening, pero nunca
+ * negativo (ticket ##103). Si la persona ya gasto mas que su aporte a Gastos del Mes + Dinero
+ * Personal (ej. hizo el cuadre al final del mes), una cuenta de ahorros no puede quedar en
+ * negativo -- se mueve todo el saldo a Nu, la cuenta queda en 0 y el faltante se compensa desde
+ * los ahorros (savingsShortfallAtOpening).
+ */
+export function expectedLeaveInAccount(leaveInAccount: DecimalInput): Decimal {
+  const value = new Decimal(leaveInAccount);
+  return value.isNegative() ? new Decimal(0) : value;
+}
+
+/**
+ * Cuanto compensar desde los ahorros para completar en Nu lo que deberia haberse movido cuando
+ * "dejar en cuenta" da negativo (ticket ##103): lo que deberia moverse a Nu menos el saldo
+ * actual, que es exactamente lo que se paso. Solo se informa -- no se escribe en el ledger de
+ * Ahorros Familiares (el "Ajuste de ahorros en cierre" ya descuenta el sobregasto). Cero si no
+ * hay sobregasto.
+ */
+export function savingsShortfallAtOpening(leaveInAccount: DecimalInput): Decimal {
+  const value = new Decimal(leaveInAccount);
+  return value.isNegative() ? value.negated() : new Decimal(0);
+}
+
+/**
  * Cuanto mover a Nu: lo que sobra en la cuenta despues de separar lo de este mes (ticket #31).
  * No es el aporte a Ahorros Conjuntos (eso quedo como dato informativo) -- es el saldo actual
  * menos lo que debe quedar, para que el cuadre de exacto sin importar remanentes de meses

@@ -317,6 +317,10 @@ export type OpeningReconciliationPreview = {
   expensesToDate: string;
   leaveInAccount: string;
   moveToSavings: string;
+  /** Faltante a compensar desde los ahorros cuando "dejar en cuenta" daria negativo (##103); "0" si no hay. */
+  savingsShortfall: string;
+  /** Lo que debe quedar completado en Nu: moveToSavings + savingsShortfall. */
+  totalToSavings: string;
 };
 
 export async function fetchOpeningReconciliationPreview(

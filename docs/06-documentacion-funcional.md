@@ -91,6 +91,12 @@ bancaria entre "lo que se deja en cuenta" (Gastos del Mes + Dinero Personal) y "
 5. Si coincide con lo esperado, éxito; si no, pantalla de "no coincide" con la diferencia exacta y
    accesos directos a revisar transacciones o corregir el saldo.
 
+Si el cuadre se hace tarde y ya se gastó más que el aporte a Gastos del Mes + Dinero Personal, "dejar en
+cuenta" daría negativo (##103): como la cuenta no puede quedar en negativo, se espera **$0** (todo el
+saldo se mueve a Nu) y el wizard avisa cuánto compensar desde los ahorros para completar en Nu lo que
+correspondía. Confirmar $0 cuenta como cuadre exitoso. Es solo una indicación: no escribe nada en el
+ledger de Ahorros Familiares (el ajuste del cierre ya refleja el sobregasto).
+
 Se guarda un historial por persona y mes (nunca se borra); si ya se hizo, el botón ofrece "repetirlo"
 con confirmación en vez de sobrescribir en silencio. Un check visual (✓/○) muestra el estado de cada
 persona y si el cuadre está completo para ambas.

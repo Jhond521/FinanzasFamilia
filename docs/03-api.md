@@ -37,7 +37,9 @@ POST /api/months/:id/sheet-export         { ownerUserIds: string[] } → botón 
 ```
 GET  /api/months/:id/opening-reconciliation/preview?userId=&accountBalance=
      → cifras informativas antes de confirmar: total gastos/ahorros/personal presupuestados,
-       gastado a la fecha, cuánto dejar en cuenta y cuánto mover a Nu
+       gastado a la fecha, cuánto dejar en cuenta y cuánto mover a Nu. Si "dejar en cuenta" daría
+       negativo, devuelve leaveInAccount=0 y savingsShortfall/totalToSavings (cuánto compensar
+       desde los ahorros y cuánto debe quedar en Nu) — solo informativo, no escribe ledger (##103)
 GET  /api/months/:id/opening-reconciliation/latest?userId=
      → { openingReconciliation } el último confirmado de esa persona, o null
 POST /api/months/:id/opening-reconciliation

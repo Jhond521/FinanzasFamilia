@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountBalanceMatches,
+  expectedLeaveInAccount,
   expensesToDate,
   leaveInAccountAtOpening,
   moveToSavingsFromBalance,
+  savingsShortfallAtOpening,
   type ExpenseEntry,
 } from './openingReconciliation';
 
@@ -55,6 +57,34 @@ describe('moveToSavingsFromBalance', () => {
 
   it('saldo exacto a lo que debe quedar da cero para mover', () => {
     expect(moveToSavingsFromBalance('3546664.38', '3546664.38').toString()).toBe('0');
+  });
+});
+
+describe('expectedLeaveInAccount / savingsShortfallAtOpening (ticket ##103)', () => {
+  it('si dejar en cuenta es positivo, se espera ese valor y no hay faltante', () => {
+    expect(expectedLeaveInAccount('3546664.38').toString()).toBe('3546664.38');
+    expect(savingsShortfallAtOpening('3546664.38').toString()).toBe('0');
+  });
+
+  it('si dejar en cuenta es negativo, se espera 0 y el faltante es lo que se paso', () => {
+    expect(expectedLeaveInAccount('-500000.50').toString()).toBe('0');
+    expect(savingsShortfallAtOpening('-500000.50').toString()).toBe('500000.5');
+  });
+
+  it('cuadre al final del mes: todo el saldo a Nu, cuenta en 0 y el faltante completa lo que deberia moverse', () => {
+    const spent = '7500000';
+    const leaveInAccount = leaveInAccountAtOpening('5490768', '1534787.92', spent);
+    const accountBalance = '1200000';
+    const expected = expectedLeaveInAccount(leaveInAccount);
+    const shortfall = savingsShortfallAtOpening(leaveInAccount);
+    const moveToSavings = moveToSavingsFromBalance(accountBalance, expected);
+
+    expect(leaveInAccount.toString()).toBe('-474444.08');
+    expect(expected.toString()).toBe('0');
+    expect(moveToSavings.toString()).toBe(accountBalance);
+    expect(accountBalanceMatches('0', expected)).toBe(true);
+    // lo que deberia moverse a Nu (saldo - dejar en cuenta calculado) - saldo actual
+    expect(shortfall.toString()).toBe(moveToSavingsFromBalance(accountBalance, leaveInAccount).minus(accountBalance).toString());
   });
 });
 
