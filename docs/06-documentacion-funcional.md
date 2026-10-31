@@ -203,8 +203,10 @@ dueño (Yo / la otra persona / Ambos).
   - Tres botones de tipo: **Personal**, **Movimiento**, **Conjunto**.
   - En pantallas táctiles, swipe horizontal también clasifica (izquierda = Personal, derecha =
     Conjunto — RF5); el swipe vertical no está implementado por conflicto con el scroll de la lista,
-    así que "Movimiento" solo tiene el botón. Cada clasificación muestra un toast de confirmación y
-    la siguiente tarjeta entra con una animación.
+    así que "Movimiento" solo tiene el botón. Al clasificar, la tarjeta sale animada hacia la
+    dirección del botón (izquierda / arriba / derecha) y un toast dice qué transacción se clasificó
+    (tipo + descripción + monto); la nueva primera tarjeta entra con un resaltado y la etiqueta
+    "Siguiente" para que no se confunda con la que se acaba de resolver (##105).
 
 ## 7. Transacciones del mes
 

@@ -20,6 +20,14 @@ import NavBar from './NavBar';
 
 const TYPE_LABEL: Record<RuleSetType, string> = { personal: 'Personal', joint: 'Conjunto', movement: 'Movimiento' };
 
+// Hacia donde sale la tarjeta clasificada: la misma direccion que la flecha del boton (##105).
+const EXIT_ANIMATION: Record<RuleSetType, string> = {
+  personal: 'motion-safe:animate-card-out-left',
+  movement: 'motion-safe:animate-card-out-up',
+  joint: 'motion-safe:animate-card-out-right',
+};
+const EXIT_ANIMATION_MS = 300;
+
 export default function ReviewQueueScreen() {
   const { data: months } = useQuery({ queryKey: ['months'], queryFn: fetchMonths });
   const openMonth = months?.find((m) => m.status === 'open') ?? months?.[0];
@@ -229,19 +237,27 @@ function ReviewQueueList({ monthId, ownerUserId }: { monthId: string; ownerUserI
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: fetchUsers });
 
-  const [toast, setToast] = useState<string | null>(null);
+  // El toast dice QUE transaccion se clasifico (no solo el tipo) para que no se confunda con la
+  // nueva tarjeta de arriba (##105).
+  const [toast, setToast] = useState<{ type: RuleSetType; description: string; amount: string } | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function showToast(type: RuleSetType) {
-    setToast(`Marcada como ${TYPE_LABEL[type]}`);
+  function showToast(type: RuleSetType, tx: Transaction) {
+    setToast({ type, description: tx.bankDescription, amount: tx.amount });
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastTimeoutRef.current = setTimeout(() => setToast(null), 2200);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 3500);
   }
 
   // Sin el gesto de swipe (ticket #84) no hay ninguna senal visual de "esto ya se fue" hasta que la
   // query se re-invalida; se oculta la tarjeta clasificada de inmediato en vez de esperar el
   // round-trip al servidor, y se revierte si la mutacion falla.
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  // Tarjetas que estan animando su salida (##105): siguen en la lista hasta que termina la
+  // animacion y recien ahi pasan a hiddenIds. Con timeout (no animationend) para que tambien
+  // funcione con prefers-reduced-motion, donde no hay animacion.
+  const [leaving, setLeaving] = useState<Map<string, RuleSetType>>(new Map());
+  // Tras la primera clasificacion, la nueva tarjeta de arriba se marca como "Siguiente".
+  const [hasClassified, setHasClassified] = useState(false);
 
   const updateMutation = useMutation({
     mutationFn: (input: { id: string; type: RuleSetType; categoryId: string | null; detail: string | null }) =>
@@ -253,6 +269,11 @@ function ReviewQueueList({ monthId, ownerUserId }: { monthId: string; ownerUserI
       ]);
     },
     onError: (_err, variables) => {
+      setLeaving((prev) => {
+        const next = new Map(prev);
+        next.delete(variables.id);
+        return next;
+      });
       setHiddenIds((prev) => {
         const next = new Set(prev);
         next.delete(variables.id);
@@ -281,17 +302,40 @@ function ReviewQueueList({ monthId, ownerUserId }: { monthId: string; ownerUserI
           transaction={tx}
           categories={categories ?? []}
           ownerName={users?.find((u) => u.id === tx.ownerUserId)?.name}
+          leavingAs={leaving.get(tx.id)}
+          isNext={i === 0 && hasClassified && !leaving.has(tx.id)}
           onClassify={(type, categoryId, detail) => {
-            showToast(type);
-            setHiddenIds((prev) => new Set(prev).add(tx.id));
+            if (leaving.has(tx.id)) return;
+            showToast(type, tx);
+            setHasClassified(true);
+            setLeaving((prev) => new Map(prev).set(tx.id, type));
+            setTimeout(() => {
+              setLeaving((prev) => {
+                const next = new Map(prev);
+                next.delete(tx.id);
+                return next;
+              });
+              setHiddenIds((prev) => new Set(prev).add(tx.id));
+            }, EXIT_ANIMATION_MS);
             updateMutation.mutate({ id: tx.id, type, categoryId, detail });
           }}
         />
       ))}
       {toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-          <div className="animate-toast-in rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white shadow-lg">
-            {toast}
+        <div role="status" className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+          <div className="animate-toast-in flex w-full max-w-sm items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-white shadow-xl">
+            <span
+              aria-hidden="true"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success text-base font-bold"
+            >
+              ✓
+            </span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold">Clasificada como {TYPE_LABEL[toast.type]}</div>
+              <div className="truncate text-xs text-white/80">
+                {toast.description} · {formatCOP(toast.amount)}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -303,11 +347,17 @@ function ReviewCard({
   transaction,
   categories,
   ownerName,
+  leavingAs,
+  isNext,
   onClassify,
 }: {
   transaction: Transaction;
   categories: { id: string; name: string }[];
   ownerName?: string;
+  /** Si esta definido, la tarjeta ya se clasifico y esta animando su salida (##105). */
+  leavingAs?: RuleSetType;
+  /** Nueva primera tarjeta tras clasificar otra: entrada mas notoria + etiqueta "Siguiente" (##105). */
+  isNext: boolean;
   onClassify: (type: RuleSetType, categoryId: string | null, detail: string | null) => void;
 }) {
   const suggestedCategoryId = transaction.suggestedCategoryId ?? null;
@@ -317,7 +367,21 @@ function ReviewCard({
   const hasConflict = transaction.ruleConflicts.length > 0;
 
   return (
-    <div className="animate-card-in rounded-2xl border border-line bg-white p-5 shadow-sm">
+    <div
+      aria-hidden={leavingAs ? true : undefined}
+      className={`rounded-2xl border border-line bg-white p-5 shadow-sm ${
+        leavingAs
+          ? `pointer-events-none ${EXIT_ANIMATION[leavingAs]}`
+          : isNext
+            ? 'ring-brand motion-safe:animate-card-in-next'
+            : 'motion-safe:animate-card-in'
+      }`}
+    >
+      {isNext && (
+        <span className="mb-2 inline-block rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-bold text-brand motion-safe:animate-badge-fade">
+          Siguiente
+        </span>
+      )}
       <div className="mb-1 flex items-start justify-between">
         <span className="text-xs font-semibold text-ink-muted">
           {transaction.date}
