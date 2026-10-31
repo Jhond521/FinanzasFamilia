@@ -17,10 +17,40 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(8px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        // Salida de la tarjeta clasificada en Revisar hacia la direccion del boton (##105).
+        'card-out-left': {
+          '0%': { opacity: '1', transform: 'translateX(0) rotate(0)' },
+          '100%': { opacity: '0', transform: 'translateX(-110%) rotate(-6deg)' },
+        },
+        'card-out-right': {
+          '0%': { opacity: '1', transform: 'translateX(0) rotate(0)' },
+          '100%': { opacity: '0', transform: 'translateX(110%) rotate(6deg)' },
+        },
+        'card-out-up': {
+          '0%': { opacity: '1', transform: 'translateY(0)' },
+          '100%': { opacity: '0', transform: 'translateY(-60%) scale(0.95)' },
+        },
+        // Entrada de la nueva primera tarjeta, mas notoria que card-in, con un resaltado que se
+        // desvanece para que se note que es otra transaccion (##105).
+        'card-in-next': {
+          '0%': { opacity: '0', transform: 'translateY(40px) scale(0.94)', boxShadow: '0 0 0 4px var(--tw-ring-color)' },
+          '60%': { opacity: '1', transform: 'translateY(0) scale(1.01)', boxShadow: '0 0 0 4px var(--tw-ring-color)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)', boxShadow: '0 0 0 0 transparent' },
+        },
+        // La etiqueta "Siguiente" se ve unos segundos y se desvanece (queda invisible, sin saltar el layout).
+        'badge-fade': {
+          '0%, 75%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
       },
       animation: {
         'card-in': 'card-in 0.25s ease-out',
         'toast-in': 'toast-in 0.2s ease-out',
+        'card-out-left': 'card-out-left 0.3s ease-in forwards',
+        'card-out-right': 'card-out-right 0.3s ease-in forwards',
+        'card-out-up': 'card-out-up 0.3s ease-in forwards',
+        'card-in-next': 'card-in-next 1.2s ease-out',
+        'badge-fade': 'badge-fade 3s ease-out forwards',
       },
       colors: {
         // Paleta tomada de design_specs/Finanzas en Pareja.dc.html (valores OKLCH del mock).
