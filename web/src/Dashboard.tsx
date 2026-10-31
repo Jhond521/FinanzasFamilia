@@ -1401,6 +1401,22 @@ function OpeningReconciliationWizard({
                   <span className="font-bold">{formatCOP(preview.moveToSavings)}</span>
                 </div>
               </div>
+              {Number(preview.savingsShortfall) > 0 && (
+                <div className="rounded-lg bg-warning-light p-3 text-sm text-ink-soft">
+                  <p className="font-semibold text-ink">
+                    Ya se gastó {formatCOP(preview.savingsShortfall)} más de lo que debía quedar en la cuenta.
+                  </p>
+                  <p className="mt-1">
+                    La cuenta no puede quedar en negativo: mueve todo el saldo a Nu (la cuenta queda en $0) y compensa{' '}
+                    <span className="font-semibold text-ink">{formatCOP(preview.savingsShortfall)}</span> desde los ahorros
+                    para completar en Nu{' '}
+                    <span className="font-semibold text-ink">
+                      {formatCOP(preview.totalToSavings)}
+                    </span>
+                    .
+                  </p>
+                </div>
+              )}
               <p className="text-xs text-ink-faint">
                 "Mover a Nu" puede ser mayor al aporte presupuestado a Ahorros Conjuntos si queda saldo de meses
                 anteriores en la cuenta — ese sobrante se termina de repartir en el cuadre de cierre. Haz la

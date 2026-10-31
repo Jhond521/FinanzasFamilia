@@ -10,8 +10,10 @@ import { leaveInAccount, realSavingsContribution, sharedExpensesExcess } from '.
 import {
   accountBalanceMatches,
   expensesToDate,
+  expectedLeaveInAccount,
   leaveInAccountAtOpening,
   moveToSavingsFromBalance,
+  savingsShortfallAtOpening,
 } from '../services/openingReconciliation';
 import { personSharedExpensesDelta } from '../services/familySavings';
 import { buildMonthExportWorkbook } from '../services/monthExport';
@@ -908,7 +910,10 @@ async function computeOpeningNumbers(month: Month, userId: string, accountBalanc
     ownedTransactions.map((tx) => ({ amount: tx.amount, type: tx.type as 'personal' | 'joint' | 'unclassified' })),
   );
 
-  const leaveInAccount = leaveInAccountAtOpening(totalSharedExpenses, totalPersonal, expensesToDateAmount);
+  // Si ya se gasto mas que el aporte (cuadre hecho tarde), lo esperado en cuenta es 0 y el
+  // faltante se compensa desde los ahorros -- solo informativo, no toca el ledger (ticket ##103).
+  const rawLeaveInAccount = leaveInAccountAtOpening(totalSharedExpenses, totalPersonal, expensesToDateAmount);
+  const leaveInAccount = expectedLeaveInAccount(rawLeaveInAccount);
 
   return {
     totalSharedExpenses,
@@ -917,6 +922,7 @@ async function computeOpeningNumbers(month: Month, userId: string, accountBalanc
     expensesToDateAmount,
     leaveInAccount,
     moveToSavings: moveToSavingsFromBalance(accountBalance, leaveInAccount),
+    savingsShortfall: savingsShortfallAtOpening(rawLeaveInAccount),
   };
 }
 
@@ -939,6 +945,8 @@ monthsRouter.get('/:id/opening-reconciliation/preview', async (req, res) => {
     expensesToDate: numbers.expensesToDateAmount.toString(),
     leaveInAccount: numbers.leaveInAccount.toString(),
     moveToSavings: numbers.moveToSavings.toString(),
+    savingsShortfall: numbers.savingsShortfall.toString(),
+    totalToSavings: numbers.moveToSavings.plus(numbers.savingsShortfall).toString(),
   });
 });
 
